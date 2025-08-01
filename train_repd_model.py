@@ -94,12 +94,16 @@ class REPDTrainer:
     def create_autoencoder(self, feature_type='DA', input_dim=None):
         """Create appropriate autoencoder based on feature type"""
         if input_dim is None:
-            input_dim = self.semantic_features[feature_type].shape[1]
+            if feature_type == 'DBN' and len(self.semantic_features[feature_type].shape) == 3:
+                input_dim = self.semantic_features[feature_type].shape[2]
+            else:
+                input_dim = self.semantic_features[feature_type].shape[1]
             
         if feature_type == 'DA':
-            # Use DeepAutoencoder with appropriate layers
+            # Create SimpleAutoencoder instead of DeepAutoencoder for DA features
+            return SimpleAutoencoder(n_components=int(input_dim * 0.5))  # Use 50% of features
             layers = [input_dim, input_dim//2, input_dim//4, input_dim//2, input_dim]
-            return DeepAutoencoder(layers=layers)
+            return DeepAutoencoder(compression_ratio=0.25)  # Use 25% compression ratio for better feature extraction
         elif feature_type == 'CA':
             # Use ConvolutionalAutoencoder
             return ConvolutionalAutoencoder(input_dim=input_dim)

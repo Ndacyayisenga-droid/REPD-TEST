@@ -10,7 +10,7 @@ from sklearn.preprocessing import StandardScaler
 
 class SimpleAutoencoder:
     """A simple autoencoder using PCA for dimensionality reduction"""
-    
+
     def __init__(self, n_components=None):
         self.n_components = n_components
         self.pca = None
@@ -57,18 +57,28 @@ class SimpleAutoencoder:
 class DeepAutoencoder:
     """Deep autoencoder using multiple PCA layers"""
     
-    def __init__(self, layers=None):
-        if layers is None:
-            layers = [100, 50, 25, 50, 100]  # Default architecture
-        self.layers = layers
+    def __init__(self, compression_ratio=0.5):
+        self.compression_ratio = compression_ratio
         self.encoders = []
         self.decoders = []
         self.scalers = []
         self.is_fitted = False
+        self.layers = None  # Will be set during fit
         
     def fit(self, X):
         """Fit the deep autoencoder"""
         current_X = X.copy()
+        input_dim = X.shape[1]
+        
+        # Automatically determine layer sizes based on input dimension
+        bottleneck_dim = max(1, int(input_dim * self.compression_ratio))
+        self.layers = [
+            input_dim,
+            max(1, input_dim // 2),
+            bottleneck_dim,
+            max(1, input_dim // 2),
+            input_dim
+        ]
         
         # Create encoders (dimensionality reduction)
         for i in range(len(self.layers) - 1):

@@ -3,8 +3,11 @@ from stat_util import get_best_distribution
 import scipy.stats as st
 
 class REPD:
+    @staticmethod
+    def default_error_func(x):
+        return np.linalg.norm(x, ord=2, axis=1)
     
-    def __init__(self,dim_reduction_model,error_func=lambda x: np.linalg.norm(x,ord=2,axis=1)):
+    def __init__(self, dim_reduction_model, error_func=None):
         self.dim_reduction_model = dim_reduction_model
         
         self.dnd = None #Distribution non defect
@@ -13,7 +16,7 @@ class REPD:
         self.dd = None#Distribution defect
         self.dd_pa = None#Distribution defect parameters
 
-        self.error_func = error_func
+        self.error_func = error_func if error_func is not None else self.default_error_func
         
     '''
     X should be a N*M matrix of data instances

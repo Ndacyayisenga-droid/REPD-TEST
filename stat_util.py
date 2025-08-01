@@ -1,4 +1,5 @@
 #determine the best distribution for the data- test if betta is really the best candidate
+import numpy as np
 import scipy.stats as st
 from numpy import std, mean, sqrt
 from scipy.stats import normaltest
@@ -6,21 +7,45 @@ from scipy.stats import chisquare
 from scipy.stats import ttest_ind
 
 
-def get_best_distribution(data,print_info=False):
-    dist_names = ["norm", "exponweib", "weibull_max", "weibull_min", "pareto", "genextreme", 'gamma', 'beta', 'rayleigh', 'lognorm']
+def get_best_distribution(data, print_info=False):
+    # Ensure data is valid
+    data = np.array(data)
+    if len(data) == 0:
+        return "norm", st.norm.fit(np.array([0.0]))  # Default to normal if no data
+        
+    # Remove any infinite or NaN values
+    data = data[np.isfinite(data)]
+    
+    # If data is constant, return normal distribution with zero variance
+    if np.all(data == data[0]):
+        return "norm", (data[0], 0.0)
+    
+    # List of distributions to try, in order of preference
+    dist_names = ["norm", "gamma", "lognorm", "weibull_min", "exponweib"]
     dist_results = []
     params = {}
+    
     for dist_name in dist_names:
-        dist = getattr(st, dist_name)
-        param = dist.fit(data)
-
-        params[dist_name] = param
-        # Applying the Kolmogorov-Smirnov test
-        D, p = st.kstest(data, dist_name, args=param)
-        dist_results.append((dist_name, p))
-
+        try:
+            dist = getattr(st, dist_name)
+            # Fit the distribution with bounds to prevent invalid parameters
+            param = dist.fit(data, floc=np.min(data)-0.001)
+            params[dist_name] = param
+            
+            # Applying the Kolmogorov-Smirnov test
+            D, p = st.kstest(data, dist_name, args=param)
+            dist_results.append((dist_name, p))
+        except Exception as e:
+            if print_info:
+                print(f"Failed to fit {dist_name}: {str(e)}")
+            continue
+    
+    if not dist_results:
+        # If no distribution fits, fallback to normal
+        return "norm", st.norm.fit(data)
+        
     # select the best fitted distribution
-    best_dist, best_p = (max(dist_results, key=lambda item: item[1]))
+    best_dist, best_p = max(dist_results, key=lambda item: item[1])
     # store the name of the best fit and its p value
     
     if print_info:
