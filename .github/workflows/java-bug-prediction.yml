@@ -1,0 +1,332 @@
+name: Java Bug Prediction Analysis
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+    paths:
+      - '**/*.java'
+
+jobs:
+  bug-prediction:
+    runs-on: ubuntu-latest
+    
+    permissions:
+      contents: read
+      pull-requests: write
+    
+    steps:
+    - name: Checkout PR branch
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+        ref: ${{ github.event.pull_request.head.sha }}
+
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.9'
+
+    - name: Set up Java
+      uses: actions/setup-java@v4
+      with:
+        distribution: 'temurin'
+        java-version: '11'
+
+    - name: Install Python dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install numpy pandas scikit-learn tensorflow torch scipy tqdm
+        pip install -r requirements.txt
+
+    - name: Get changed Java files
+      id: changed-files
+      run: |
+        # Get list of changed Java files in the PR
+        git diff --name-only origin/${{ github.base_ref }}..HEAD | grep '\.java$' > changed_files.txt || true
+        
+        if [ -s changed_files.txt ]; then
+          echo "changed_files_exist=true" >> $GITHUB_OUTPUT
+          echo "Changed Java files:"
+          cat changed_files.txt
+          
+          # Store changed files for later use
+          echo "CHANGED_FILES<<EOF" >> $GITHUB_ENV
+          cat changed_files.txt
+          echo "EOF" >> $GITHUB_ENV
+        else
+          echo "changed_files_exist=false" >> $GITHUB_OUTPUT
+          echo "No Java files changed in this PR"
+        fi
+
+    - name: Analyze changed files
+      if: steps.changed-files.outputs.changed_files_exist == 'true'
+      run: |
+        # Create list of changed Java files
+        echo "$CHANGED_FILES" > files_to_analyze.txt
+        
+        # Filter out files that actually exist (in case of deletions)
+        existing_files=""
+        while IFS= read -r file; do
+          if [ -f "$file" ]; then
+            existing_files="$existing_files $file"
+          fi
+        done < files_to_analyze.txt
+        
+        if [ -n "$existing_files" ]; then
+          echo "Analyzing files: $existing_files"
+          python bug_prediction_pipeline.py --files $existing_files --output pr_analysis_results --report
+        else
+          echo "No existing Java files to analyze"
+        fi
+
+    - name: Generate PR comment
+      if: steps.changed-files.outputs.changed_files_exist == 'true'
+      run: |
+        python << 'EOF'
+        import os
+        import json
+        import pandas as pd
+        from pathlib import Path
+        
+        def generate_pr_comment():
+            results_dir = "pr_analysis_results"
+            
+            # Check if analysis was completed
+            if not os.path.exists(results_dir):
+                return "## 🔍 Java Bug Prediction Analysis\n\n⚠️ **Analysis could not be completed** - no results directory found."
+            
+            # Look for prediction files
+            prediction_files = list(Path(results_dir).glob("*_predictions.csv"))
+            summary_files = list(Path(results_dir).glob("*_prediction_summary.json"))
+            
+            if not prediction_files:
+                return "## 🔍 Java Bug Prediction Analysis\n\n⚠️ **No predictions generated** - analysis may have failed."
+            
+            comment_lines = [
+                "## 🔍 Java Bug Prediction Analysis",
+                "",
+                "**Analysis completed using REPD semantic models**",
+                ""
+            ]
+            
+            # Load summary if available
+            summary_data = {}
+            if summary_files:
+                try:
+                    with open(summary_files[0], 'r') as f:
+                        summary_data = json.load(f)
+                except Exception as e:
+                    print(f"Error loading summary: {e}")
+            
+            # Process each model's predictions
+            model_results = {}
+            for pred_file in prediction_files:
+                try:
+                    df = pd.read_csv(pred_file)
+                    model_type = df['model_type'].iloc[0] if 'model_type' in df.columns else 'Unknown'
+                    model_results[model_type] = df
+                except Exception as e:
+                    print(f"Error loading predictions from {pred_file}: {e}")
+            
+            if model_results:
+                # Summary statistics
+                total_files = len(list(model_results.values())[0]) if model_results else 0
+                comment_lines.extend([
+                    f"📊 **Files Analyzed:** {total_files}",
+                    f"🤖 **Models Used:** {', '.join(model_results.keys())}",
+                    ""
+                ])
+                
+                # Results by model
+                for model_type, df in model_results.items():
+                    defective_count = (df['prediction'] == 1).sum()
+                    defect_rate = (defective_count / len(df)) * 100 if len(df) > 0 else 0
+                    avg_prob = df['probability_defective'].mean()
+                    
+                    comment_lines.extend([
+                        f"### 🔬 {model_type} Model Results",
+                        "",
+                        f"- **Predicted Defective:** {defective_count}/{len(df)} files ({defect_rate:.1f}%)",
+                        f"- **Average Defect Probability:** {avg_prob:.4f}",
+                        ""
+                    ])
+                    
+                    # Top risky files
+                    if len(df) > 0:
+                        top_risky = df.nlargest(min(3, len(df)), 'probability_defective')
+                        if len(top_risky) > 0:
+                            comment_lines.extend([
+                                "**🚨 Top Risky Files:**",
+                                "",
+                                "| File | Defect Probability | Status |",
+                                "|------|-------------------|--------|"
+                            ])
+                            
+                            for _, row in top_risky.iterrows():
+                                file_name = row.get('file_path', row.get('file_id', 'Unknown'))
+                                if isinstance(file_name, str):
+                                    # Truncate long file paths
+                                    if len(file_name) > 50:
+                                        file_name = "..." + file_name[-47:]
+                                
+                                prob = row['probability_defective']
+                                status = "🔴 High Risk" if prob > 0.7 else "🟡 Medium Risk" if prob > 0.3 else "🟢 Low Risk"
+                                
+                                comment_lines.append(f"| `{file_name}` | {prob:.4f} | {status} |")
+                            
+                            comment_lines.append("")
+                
+                # Overall assessment
+                all_probs = []
+                all_predictions = []
+                for df in model_results.values():
+                    all_probs.extend(df['probability_defective'].tolist())
+                    all_predictions.extend(df['prediction'].tolist())
+                
+                if all_probs:
+                    avg_overall_prob = sum(all_probs) / len(all_probs)
+                    high_risk_count = sum(1 for p in all_probs if p > 0.7)
+                    
+                    comment_lines.extend([
+                        "### 📋 Overall Assessment",
+                        ""
+                    ])
+                    
+                    if avg_overall_prob > 0.6:
+                        comment_lines.append("🚨 **HIGH RISK**: This PR contains files with elevated bug risk.")
+                    elif avg_overall_prob > 0.3:
+                        comment_lines.append("🟡 **MEDIUM RISK**: Some files in this PR may need closer review.")
+                    else:
+                        comment_lines.append("✅ **LOW RISK**: Files in this PR appear to have low bug risk.")
+                    
+                    comment_lines.extend([
+                        "",
+                        f"- Average defect probability across all models: {avg_overall_prob:.4f}",
+                        f"- Files with high risk (>0.7): {high_risk_count}",
+                        ""
+                    ])
+                
+                # Recommendations
+                comment_lines.extend([
+                    "### 💡 Recommendations",
+                    ""
+                ])
+                
+                high_risk_files = []
+                for df in model_results.values():
+                    high_risk = df[df['probability_defective'] > 0.7]
+                    if len(high_risk) > 0:
+                        high_risk_files.extend(high_risk['file_path'].tolist() if 'file_path' in high_risk.columns else high_risk['file_id'].tolist())
+                
+                if high_risk_files:
+                    comment_lines.extend([
+                        "🔍 **Focus code review on high-risk files**",
+                        "📝 **Consider additional testing for flagged components**",
+                        "🧪 **Run extra validation on complex methods**"
+                    ])
+                else:
+                    comment_lines.extend([
+                        "✅ **Standard code review process should be sufficient**",
+                        "📋 **Continue with normal testing procedures**"
+                    ])
+            
+            else:
+                comment_lines.extend([
+                    "⚠️ **No model results available**",
+                    "",
+                    "The analysis completed but no prediction data was generated.",
+                    "This may indicate an issue with the feature extraction process."
+                ])
+            
+            comment_lines.extend([
+                "",
+                "---",
+                "*🤖 Generated by REPD Bug Prediction System*",
+                "*📊 Based on semantic analysis of Java code using trained autoencoders*"
+            ])
+            
+            return "\n".join(comment_lines)
+        
+        # Generate and save comment
+        comment_content = generate_pr_comment()
+        
+        with open('pr_comment.md', 'w') as f:
+            f.write(comment_content)
+        
+        print("Generated PR comment:")
+        print("=" * 50)
+        print(comment_content)
+        EOF
+
+    - name: Post comment to PR
+      if: steps.changed-files.outputs.changed_files_exist == 'true'
+      uses: actions/github-script@v7
+      with:
+        script: |
+          const fs = require('fs');
+          
+          try {
+            const comment = fs.readFileSync('pr_comment.md', 'utf8');
+            
+            await github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: comment
+            });
+            
+            console.log('Successfully posted comment to PR');
+          } catch (error) {
+            console.error('Error posting comment:', error);
+            
+            // Post a fallback comment
+            await github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: '## 🔍 Java Bug Prediction Analysis\n\n⚠️ **Analysis encountered an error**\n\nPlease check the workflow logs for details.'
+            });
+          }
+
+    - name: Upload analysis results
+      if: steps.changed-files.outputs.changed_files_exist == 'true'
+      uses: actions/upload-artifact@v4
+      with:
+        name: bug-prediction-results
+        path: |
+          pr_analysis_results/
+          pr_comment.md
+          changed_files.txt
+        retention-days: 30
+
+    - name: Check for high-risk files
+      if: steps.changed-files.outputs.changed_files_exist == 'true'
+      run: |
+        python << 'EOF'
+        import os
+        import pandas as pd
+        from pathlib import Path
+        
+        # Check if any files have very high defect probability
+        results_dir = "pr_analysis_results"
+        high_risk_threshold = 0.8
+        
+        if os.path.exists(results_dir):
+            prediction_files = list(Path(results_dir).glob("*_predictions.csv"))
+            
+            high_risk_files = []
+            for pred_file in prediction_files:
+                try:
+                    df = pd.read_csv(pred_file)
+                    very_high_risk = df[df['probability_defective'] > high_risk_threshold]
+                    if len(very_high_risk) > 0:
+                        high_risk_files.extend(very_high_risk['file_path'].tolist() if 'file_path' in very_high_risk.columns else very_high_risk['file_id'].tolist())
+                except Exception:
+                    pass
+            
+            if high_risk_files:
+                print(f"::warning::High-risk files detected with >80% defect probability: {', '.join(set(high_risk_files))}")
+                print("Consider additional code review and testing for these files.")
+            else:
+                print("No extremely high-risk files detected.")
+        EOF
