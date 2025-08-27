@@ -287,7 +287,7 @@ jobs:
             after_df, after_summary = load_prediction_data(after_results_dir)
 
             comment_lines = [
-                "## 🔍 Java Bug Prediction Analysis - Before vs After Comparison",
+                "## � Bug Prediction Analysis",
                 "",
                 "**Analysis completed using REPD Deep Autoencoder (DA) model**",
                 ""
@@ -332,12 +332,7 @@ jobs:
                 ""
             ])
 
-            # File-by-file comparison
-            comment_lines.extend([
-                "### 📈 File-by-File Impact Analysis",
-                ""
-            ])
-
+            # File-by-file comparison with the requested format
             # Create a mapping of files for comparison
             if 'file_path' in before_df.columns and 'file_path' in after_df.columns:
                 file_col = 'file_path'
@@ -357,47 +352,65 @@ jobs:
                 
                 if common_files:
                     for file_path in sorted(common_files):
-                        before_prob = before_df_indexed.loc[file_path, 'probability_defective']
-                        after_prob = after_df_indexed.loc[file_path, 'probability_defective']
+                        before_prob_defective = before_df_indexed.loc[file_path, 'probability_defective']
+                        after_prob_defective = after_df_indexed.loc[file_path, 'probability_defective']
                         before_pred = before_df_indexed.loc[file_path, 'prediction']
                         after_pred = after_df_indexed.loc[file_path, 'prediction']
                         
-                        # Calculate percentage change
-                        if before_prob > 0:
-                            percent_change = ((after_prob - before_prob) / before_prob) * 100
+                        # Calculate probability of non-defective (1 - probability_defective)
+                        before_prob_non_defective = 1.0 - before_prob_defective
+                        after_prob_non_defective = 1.0 - after_prob_defective
+                        
+                        # Calculate percentage changes
+                        if before_prob_defective > 0:
+                            defective_change = ((after_prob_defective - before_prob_defective) / before_prob_defective) * 100
                         else:
-                            percent_change = float('inf') if after_prob > 0 else 0
+                            defective_change = float('inf') if after_prob_defective > 0 else 0
+                        
+                        if before_prob_non_defective > 0:
+                            non_defective_change = ((after_prob_non_defective - before_prob_non_defective) / before_prob_non_defective) * 100
+                        else:
+                            non_defective_change = float('inf') if after_prob_non_defective > 0 else 0
                         
                         # Determine outcome change
                         before_status = "Defective" if before_pred == 1 else "Non-Defective"
                         after_status = "Defective" if after_pred == 1 else "Non-Defective"
                         
-                        # Format file name
+                        # Format file name (keep original name format)
                         display_name = file_path
-                        if len(display_name) > 50:
-                            display_name = "..." + display_name[-47:]
                         
                         comment_lines.extend([
-                            f"**File:** `{display_name}`",
-                            f"**Outcome:** {before_status} → {after_status}",
+                            f"**File:** {display_name}",
+                            f"**Outcome:** {before_status} -> {after_status}",
                             "",
                             "| Metric | BEFORE PR | AFTER PR | % Change |",
                             "|--------|-----------|----------|----------|"
                         ])
                         
                         # Format the probability values in scientific notation
-                        before_sci = f"{before_prob:.5e}"
-                        after_sci = f"{after_prob:.5e}"
+                        before_defective_sci = f"{before_prob_defective:.5e}"
+                        after_defective_sci = f"{after_prob_defective:.5e}"
+                        before_non_defective_sci = f"{before_prob_non_defective:.5e}"
+                        after_non_defective_sci = f"{after_prob_non_defective:.5e}"
                         
-                        if percent_change == float('inf'):
-                            change_str = "+∞%"
-                        elif percent_change == 0:
-                            change_str = "0%"
+                        # Format percentage changes
+                        if defective_change == float('inf'):
+                            defective_change_str = "+∞%"
+                        elif defective_change == 0:
+                            defective_change_str = "0%"
                         else:
-                            change_str = f"{percent_change:+.2f}%"
+                            defective_change_str = f"{defective_change:+.2f}%"
+                        
+                        if non_defective_change == float('inf'):
+                            non_defective_change_str = "+∞%"
+                        elif non_defective_change == 0:
+                            non_defective_change_str = "0%"
+                        else:
+                            non_defective_change_str = f"{non_defective_change:+.2f}%"
                         
                         comment_lines.extend([
-                            f"| PDF(Defective \\| Reconstruction Error) | {before_sci} | {after_sci} | {change_str} |",
+                            f"| PDF(Defective \\| Reconstruction Error) | {before_defective_sci} | {after_defective_sci} | {defective_change_str} |",
+                            f"| PDF(Non-Defective \\| Reconstruction Error) | {before_non_defective_sci} | {after_non_defective_sci} | {non_defective_change_str} |",
                             ""
                         ])
                 else:
@@ -406,39 +419,70 @@ jobs:
                 # Fallback: assume same order and compare by index
                 min_len = min(len(before_df), len(after_df))
                 for i in range(min_len):
-                    before_prob = before_df.iloc[i]['probability_defective']
-                    after_prob = after_df.iloc[i]['probability_defective']
+                    before_prob_defective = before_df.iloc[i]['probability_defective']
+                    after_prob_defective = after_df.iloc[i]['probability_defective']
                     before_pred = before_df.iloc[i]['prediction']
                     after_pred = after_df.iloc[i]['prediction']
                     
-                    if before_prob > 0:
-                        percent_change = ((after_prob - before_prob) / before_prob) * 100
+                    # Calculate probability of non-defective
+                    before_prob_non_defective = 1.0 - before_prob_defective
+                    after_prob_non_defective = 1.0 - after_prob_defective
+                    
+                    # Calculate percentage changes
+                    if before_prob_defective > 0:
+                        defective_change = ((after_prob_defective - before_prob_defective) / before_prob_defective) * 100
                     else:
-                        percent_change = float('inf') if after_prob > 0 else 0
+                        defective_change = float('inf') if after_prob_defective > 0 else 0
+                    
+                    if before_prob_non_defective > 0:
+                        non_defective_change = ((after_prob_non_defective - before_prob_non_defective) / before_prob_non_defective) * 100
+                    else:
+                        non_defective_change = float('inf') if after_prob_non_defective > 0 else 0
                     
                     before_status = "Defective" if before_pred == 1 else "Non-Defective"
                     after_status = "Defective" if after_pred == 1 else "Non-Defective"
                     
+                    # Try to get file name from dataframe if available
+                    file_name = "Unknown"
+                    if 'file_path' in before_df.columns:
+                        file_name = before_df.iloc[i]['file_path']
+                    elif 'file_id' in before_df.columns:
+                        file_name = before_df.iloc[i]['file_id']
+                    else:
+                        file_name = f"File_{i+1}.java"
+                    
                     comment_lines.extend([
-                        f"**File {i+1}:**",
-                        f"**Outcome:** {before_status} → {after_status}",
+                        f"**File:** {file_name}",
+                        f"**Outcome:** {before_status} -> {after_status}",
                         "",
                         "| Metric | BEFORE PR | AFTER PR | % Change |",
                         "|--------|-----------|----------|----------|"
                     ])
                     
-                    before_sci = f"{before_prob:.5e}"
-                    after_sci = f"{after_prob:.5e}"
+                    # Format the probability values in scientific notation
+                    before_defective_sci = f"{before_prob_defective:.5e}"
+                    after_defective_sci = f"{after_prob_defective:.5e}"
+                    before_non_defective_sci = f"{before_prob_non_defective:.5e}"
+                    after_non_defective_sci = f"{after_prob_non_defective:.5e}"
                     
-                    if percent_change == float('inf'):
-                        change_str = "+∞%"
-                    elif percent_change == 0:
-                        change_str = "0%"
+                    # Format percentage changes
+                    if defective_change == float('inf'):
+                        defective_change_str = "+∞%"
+                    elif defective_change == 0:
+                        defective_change_str = "0%"
                     else:
-                        change_str = f"{percent_change:+.2f}%"
+                        defective_change_str = f"{defective_change:+.2f}%"
+                    
+                    if non_defective_change == float('inf'):
+                        non_defective_change_str = "+∞%"
+                    elif non_defective_change == 0:
+                        non_defective_change_str = "0%"
+                    else:
+                        non_defective_change_str = f"{non_defective_change:+.2f}%"
                     
                     comment_lines.extend([
-                        f"| PDF(Defective \\| Reconstruction Error) | {before_sci} | {after_sci} | {change_str} |",
+                        f"| PDF(Defective \\| Reconstruction Error) | {before_defective_sci} | {after_defective_sci} | {defective_change_str} |",
+                        f"| PDF(Non-Defective \\| Reconstruction Error) | {before_non_defective_sci} | {after_non_defective_sci} | {non_defective_change_str} |",
                         ""
                     ])
 
