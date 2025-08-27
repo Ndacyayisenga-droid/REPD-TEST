@@ -103,7 +103,45 @@ jobs:
           echo "No Java files found in this PR or repository"
         fi
 
-    - name: Analyze changed files
+    - name: Analyze BEFORE state (base branch)
+      if: steps.changed-files.outputs.changed_files_exist == 'true'
+      run: |
+        echo "Analyzing BEFORE state (base branch)..."
+        
+        # Checkout the base branch to analyze original files
+        git stash push -m "Stash current changes"
+        git checkout origin/${{ github.base_ref }}
+        
+        # Create list of files that exist in base branch
+        echo "$CHANGED_FILES" > files_to_analyze.txt
+        existing_files=()
+        while IFS= read -r file; do
+          if [ -f "$file" ]; then
+            existing_files+=("$file")
+          fi
+        done < files_to_analyze.txt
+
+        if [ ${#existing_files[@]} -gt 0 ]; then
+          echo "Analyzing BEFORE state for files: ${existing_files[*]}"
+          python -u bug_prediction_pipeline.py --files "${existing_files[@]}" --output before_analysis_results --report 2>&1 || {
+            echo "Before analysis failed, trying simple predictor..."
+            python -u simple_bug_predictor.py --files "${existing_files[@]}" --output before_analysis_results || {
+              echo "Creating empty before results"
+              mkdir -p before_analysis_results
+              echo "Before analysis failed" > before_analysis_results/error.txt
+            }
+          }
+        else
+          echo "No files to analyze in base branch"
+          mkdir -p before_analysis_results
+          echo "No files found in base branch" > before_analysis_results/error.txt
+        fi
+        
+        # Return to PR branch
+        git checkout -
+        git stash pop || echo "No stash to pop"
+
+    - name: Analyze AFTER state (current branch)
       if: steps.changed-files.outputs.changed_files_exist == 'true'
       run: |
         # Create list of changed Java files
@@ -117,7 +155,7 @@ jobs:
           fi
         done < files_to_analyze.txt
 
-        echo "Debug: Analysis step"
+        echo "Debug: AFTER state analysis"
         echo "Files to analyze content:"
         cat files_to_analyze.txt || echo "No files_to_analyze.txt found"
         echo "CHANGED_FILES environment variable:"
@@ -126,7 +164,7 @@ jobs:
         echo "Existing files: ${existing_files[*]}"
 
         if [ ${#existing_files[@]} -gt 0 ]; then
-          echo "Analyzing files: ${existing_files[*]}"
+          echo "Analyzing AFTER state for files: ${existing_files[*]}"
           echo "Number of files to analyze: ${#existing_files[@]}"
           echo "Current working directory: $(pwd)"
           echo "Files exist check:"
@@ -134,33 +172,20 @@ jobs:
             echo "  $file: $([ -f "$file" ] && echo "EXISTS" || echo "MISSING")"
           done
           echo "Running bug prediction pipeline..."
-          echo "Command: python bug_prediction_pipeline.py --files ${existing_files[*]} --output pr_analysis_results --report"
+          echo "Command: python bug_prediction_pipeline.py --files ${existing_files[*]} --output after_analysis_results --report"
           
-          # Test with a single file first
-          if [ ${#existing_files[@]} -gt 0 ]; then
-            echo "Testing with first file: ${existing_files[0]}"
-            echo "File content preview:"
-            head -5 "${existing_files[0]}" || echo "Could not read file"
-            python bug_prediction_pipeline.py --files "${existing_files[0]}" --output test_single_file || echo "Single file test failed"
-          fi
-          
-          echo "Python script arguments:"
-          echo "  Files: ${existing_files[*]}"
-          echo "  Output: pr_analysis_results"
-          echo "  Report: yes"
-          
-          python -u bug_prediction_pipeline.py --files "${existing_files[@]}" --output pr_analysis_results --report 2>&1 || {
+          python -u bug_prediction_pipeline.py --files "${existing_files[@]}" --output after_analysis_results --report 2>&1 || {
             echo "Main analysis failed with exit code $?"
             echo "Trying simple bug predictor as fallback..."
-            python -u simple_bug_predictor.py --files "${existing_files[@]}" --output pr_analysis_results || {
+            python -u simple_bug_predictor.py --files "${existing_files[@]}" --output after_analysis_results || {
               echo "Simple predictor also failed, creating empty results directory"
-              mkdir -p pr_analysis_results
-              echo "Analysis failed - check logs for details" > pr_analysis_results/error.txt
+              mkdir -p after_analysis_results
+              echo "Analysis failed - check logs for details" > after_analysis_results/error.txt
             }
           }
           
-          echo "Checking results directory..."
-          ls -la pr_analysis_results/ || echo "Results directory not created"
+          echo "Checking AFTER results directory..."
+          ls -la after_analysis_results/ || echo "Results directory not created"
         else
           echo "No existing Java files to analyze"
           
@@ -170,220 +195,378 @@ jobs:
           if [ ${#fallback_files[@]} -gt 0 ]; then
             echo "Found fallback files: ${fallback_files[*]}"
             echo "Testing with first fallback file: ${fallback_files[0]}"
-            python -u simple_bug_predictor.py --files "${fallback_files[0]}" --output pr_analysis_results || {
+            python -u simple_bug_predictor.py --files "${fallback_files[0]}" --output after_analysis_results || {
               echo "Fallback analysis also failed"
-              mkdir -p pr_analysis_results
-              echo "Analysis failed - no files could be processed" > pr_analysis_results/error.txt
+              mkdir -p after_analysis_results
+              echo "Analysis failed - no files could be processed" > after_analysis_results/error.txt
             }
           else
             echo "No Java files found for fallback analysis"
-            mkdir -p pr_analysis_results
-            echo "No Java files found to analyze" > pr_analysis_results/error.txt
+            mkdir -p after_analysis_results
+            echo "No Java files found to analyze" > after_analysis_results/error.txt
           fi
         fi
 
     - name: Ensure results directory exists
       run: |
-        # Ensure results directory exists for comment generation
-        mkdir -p pr_analysis_results || true
-        if [ ! -f "pr_analysis_results/error.txt" ] && [ ! -f "pr_analysis_results/*_DA_predictions.csv" ]; then
-          echo "No analysis results found, creating error file"
-          echo "No Java files found to analyze" > pr_analysis_results/error.txt
+        # Ensure results directories exist for comment generation
+        mkdir -p before_analysis_results || true
+        mkdir -p after_analysis_results || true
+        
+        if [ ! -f "before_analysis_results/error.txt" ] && [ ! -f "before_analysis_results/*_DA_predictions.csv" ]; then
+          echo "No before analysis results found, creating error file"
+          echo "No analysis results available for base branch" > before_analysis_results/error.txt
+        fi
+        
+        if [ ! -f "after_analysis_results/error.txt" ] && [ ! -f "after_analysis_results/*_DA_predictions.csv" ]; then
+          echo "No after analysis results found, creating error file"
+          echo "No analysis results available for current branch" > after_analysis_results/error.txt
         fi
 
-    - name: Generate PR comment
+    - name: Generate PR comment with comparison
       run: |
-        echo "Generating PR comment..."
+        echo "Generating PR comment with before/after comparison..."
         echo "Current directory: $(pwd)"
-        echo "Results directory contents:"
-        ls -la pr_analysis_results/ || echo "Results directory not found"
+        echo "Before results directory contents:"
+        ls -la before_analysis_results/ || echo "Before results directory not found"
+        echo "After results directory contents:"
+        ls -la after_analysis_results/ || echo "After results directory not found"
         
         # Always try to generate a comment, even if no files were found
-        if [ ! -d "pr_analysis_results" ]; then
-          echo "No results directory found, creating error comment"
-          mkdir -p pr_analysis_results
-          echo "Analysis failed - no results generated" > pr_analysis_results/error.txt
+        if [ ! -d "before_analysis_results" ]; then
+          echo "No before results directory found, creating error comment"
+          mkdir -p before_analysis_results
+          echo "Analysis failed - no before results generated" > before_analysis_results/error.txt
+        fi
+        
+        if [ ! -d "after_analysis_results" ]; then
+          echo "No after results directory found, creating error comment"
+          mkdir -p after_analysis_results
+          echo "Analysis failed - no after results generated" > after_analysis_results/error.txt
         fi
         
         python << 'EOF'
         import os
         import json
         import pandas as pd
+        import numpy as np
         from pathlib import Path
 
-        def generate_pr_comment():
-            results_dir = "pr_analysis_results"
-
-            # Check if analysis was completed
+        def load_prediction_data(results_dir):
+            """Load prediction data from results directory"""
             if not os.path.exists(results_dir):
-                return "## 🔍 Java Bug Prediction Analysis\n\n⚠️ **Analysis could not be completed** - no results directory found."
-
-            # Look for prediction files (DA model only)
+                return None, None
+                
             prediction_files = list(Path(results_dir).glob("*_DA_predictions.csv"))
             summary_files = list(Path(results_dir).glob("*_prediction_summary.json"))
-
-            # If no prediction files, check error.txt for specific error messages
-            if not prediction_files:
-                error_file = os.path.join(results_dir, "error.txt")
-                if os.path.exists(error_file):
-                    with open(error_file, 'r') as f:
-                        error_content = f.read().strip()
-                    if "No Java files found to analyze" in error_content:
-                        return "## 🔍 Java Bug Prediction Analysis\n\n⚠️ **No Java files found** - no Java files were detected in this PR or repository for analysis."
-                    elif "Analysis failed" in error_content:
-                        return "## 🔍 Java Bug Prediction Analysis\n\n⚠️ **Analysis failed** - the bug prediction system encountered an error. Please check the workflow logs for details."
-                return "## 🔍 Java Bug Prediction Analysis\n\n⚠️ **No predictions generated** - analysis may have failed."
-
-            comment_lines = [
-                "## 🔍 Java Bug Prediction Analysis",
-                "",
-                "**Analysis completed using REPD Deep Autoencoder (DA) model**",
-                ""
-            ]
-
-            # Load summary if available
+            
+            predictions_df = None
             summary_data = {}
+            
+            if prediction_files:
+                try:
+                    predictions_df = pd.read_csv(prediction_files[0])
+                except Exception as e:
+                    print(f"Error loading predictions from {prediction_files[0]}: {e}")
+            
             if summary_files:
                 try:
                     with open(summary_files[0], 'r') as f:
                         summary_data = json.load(f)
                 except Exception as e:
-                    print(f"Error loading summary: {e}")
+                    print(f"Error loading summary from {summary_files[0]}: {e}")
+                    
+            return predictions_df, summary_data
 
-            # Process each model's predictions
-            model_results = {}
-            for pred_file in prediction_files:
-                try:
-                    df = pd.read_csv(pred_file)
-                    model_type = df['model_type'].iloc[0] if 'model_type' in df.columns else 'Unknown'
-                    model_results[model_type] = df
-                except Exception as e:
-                    print(f"Error loading predictions from {pred_file}: {e}")
+        def generate_comparison_comment():
+            before_results_dir = "before_analysis_results"
+            after_results_dir = "after_analysis_results"
 
-            if model_results:
-                # Summary statistics
-                total_files = len(list(model_results.values())[0]) if model_results else 0
+            # Load before and after data
+            before_df, before_summary = load_prediction_data(before_results_dir)
+            after_df, after_summary = load_prediction_data(after_results_dir)
+
+            comment_lines = [
+                "## 🔍 Java Bug Prediction Analysis - Before vs After Comparison",
+                "",
+                "**Analysis completed using REPD Deep Autoencoder (DA) model**",
+                ""
+            ]
+
+            # Check if we have valid data for comparison
+            has_before = before_df is not None and len(before_df) > 0
+            has_after = after_df is not None and len(after_df) > 0
+
+            if not has_before and not has_after:
                 comment_lines.extend([
-                    f"📊 **Files Analyzed:** {total_files}",
-                    f"🤖 **Model Used:** Deep Autoencoder (DA)",
-                    ""
+                    "⚠️ **No analysis data available**",
+                    "",
+                    "Unable to perform before/after comparison - no prediction data found.",
+                    "This may indicate an issue with the analysis process."
                 ])
+                return "\n".join(comment_lines)
 
-                # Results for DA model
-                if 'DA' in model_results:
-                    df = model_results['DA']
-                    defective_count = (df['prediction'] == 1).sum()
-                    defect_rate = (defective_count / len(df)) * 100 if len(df) > 0 else 0
-                    avg_prob = df['probability_defective'].mean()
-
-                    comment_lines.extend([
-                        "### 🔬 Deep Autoencoder (DA) Model Results",
-                        "",
-                        f"- **Predicted Defective:** {defective_count}/{len(df)} files ({defect_rate:.1f}%)",
-                        f"- **Average Defect Probability:** {avg_prob:.4f}",
-                        ""
-                    ])
-
-                    # Top risky files
-                    if len(df) > 0:
-                        top_risky = df.nlargest(min(3, len(df)), 'probability_defective')
-                        if len(top_risky) > 0:
-                            comment_lines.extend([
-                                "**🚨 Top Risky Files:**",
-                                "",
-                                "| File | Defect Probability | Status |",
-                                "|------|-------------------|--------|"
-                            ])
-
-                            for _, row in top_risky.iterrows():
-                                file_name = row.get('file_path', row.get('file_id', 'Unknown'))
-                                if isinstance(file_name, str):
-                                    # Truncate long file paths
-                                    if len(file_name) > 50:
-                                        file_name = "..." + file_name[-47:]
-
-                                prob = row['probability_defective']
-                                status = "🔴 High Risk" if prob > 0.7 else "🟡 Medium Risk" if prob > 0.3 else "🟢 Low Risk"
-
-                                comment_lines.append(f"| `{file_name}` | {prob:.4f} | {status} |")
-
-                            comment_lines.append("")
-
-                # Overall assessment (DA model only)
-                all_probs = []
-                all_predictions = []
-                if 'DA' in model_results:
-                    df = model_results['DA']
-                    all_probs.extend(df['probability_defective'].tolist())
-                    all_predictions.extend(df['prediction'].tolist())
-
-                if all_probs:
-                    avg_overall_prob = sum(all_probs) / len(all_probs)
-                    high_risk_count = sum(1 for p in all_probs if p > 0.7)
-
-                    comment_lines.extend([
-                        "### 📋 Overall Assessment",
-                        ""
-                    ])
-
-                    if avg_overall_prob > 0.6:
-                        comment_lines.append("🚨 **HIGH RISK**: This PR contains files with elevated bug risk.")
-                    elif avg_overall_prob > 0.3:
-                        comment_lines.append("🟡 **MEDIUM RISK**: Some files in this PR may need closer review.")
-                    else:
-                        comment_lines.append("✅ **LOW RISK**: Files in this PR appear to have low bug risk.")
-
-                    comment_lines.extend([
-                        "",
-                        f"- Average defect probability across all models: {avg_overall_prob:.4f}",
-                        f"- Files with high risk (>0.7): {high_risk_count}",
-                        ""
-                    ])
-
-                # Recommendations
+            if not has_before:
                 comment_lines.extend([
-                    "### 💡 Recommendations",
-                    ""
+                    "⚠️ **Before state analysis unavailable**",
+                    "",
+                    "Only current state analysis is available.",
+                    "Files may be newly added in this PR."
                 ])
+                # Fall back to showing only after results
+                return generate_single_state_comment(after_df, after_summary, "Current State")
 
-                high_risk_files = []
-                if 'DA' in model_results:
-                    df = model_results['DA']
-                    high_risk = df[df['probability_defective'] > 0.7]
-                    if len(high_risk) > 0:
-                        high_risk_files.extend(high_risk['file_path'].tolist() if 'file_path' in high_risk.columns else high_risk['file_id'].tolist())
+            if not has_after:
+                comment_lines.extend([
+                    "⚠️ **After state analysis unavailable**",
+                    "",
+                    "Only base branch analysis is available.",
+                    "Files may have been deleted in this PR."
+                ])
+                return "\n".join(comment_lines)
 
-                if high_risk_files:
-                    comment_lines.extend([
-                        "🔍 **Focus code review on high-risk files**",
-                        "📝 **Consider additional testing for flagged components**",
-                        "🧪 **Run extra validation on complex methods**"
-                    ])
+            # We have both before and after data - generate comparison
+            comment_lines.extend([
+                f"📊 **Files Analyzed:** {len(after_df)}",
+                f"🤖 **Model Used:** Deep Autoencoder (DA)",
+                ""
+            ])
+
+            # File-by-file comparison
+            comment_lines.extend([
+                "### 📈 File-by-File Impact Analysis",
+                ""
+            ])
+
+            # Create a mapping of files for comparison
+            if 'file_path' in before_df.columns and 'file_path' in after_df.columns:
+                file_col = 'file_path'
+            elif 'file_id' in before_df.columns and 'file_id' in after_df.columns:
+                file_col = 'file_id'
+            else:
+                # Assume same order if no file identifiers
+                file_col = None
+
+            if file_col:
+                # Merge dataframes on file identifier
+                before_df_indexed = before_df.set_index(file_col)
+                after_df_indexed = after_df.set_index(file_col)
+                
+                # Find common files
+                common_files = set(before_df_indexed.index) & set(after_df_indexed.index)
+                
+                if common_files:
+                    for file_path in sorted(common_files):
+                        before_prob = before_df_indexed.loc[file_path, 'probability_defective']
+                        after_prob = after_df_indexed.loc[file_path, 'probability_defective']
+                        before_pred = before_df_indexed.loc[file_path, 'prediction']
+                        after_pred = after_df_indexed.loc[file_path, 'prediction']
+                        
+                        # Calculate percentage change
+                        if before_prob > 0:
+                            percent_change = ((after_prob - before_prob) / before_prob) * 100
+                        else:
+                            percent_change = float('inf') if after_prob > 0 else 0
+                        
+                        # Determine outcome change
+                        before_status = "Defective" if before_pred == 1 else "Non-Defective"
+                        after_status = "Defective" if after_pred == 1 else "Non-Defective"
+                        
+                        # Format file name
+                        display_name = file_path
+                        if len(display_name) > 50:
+                            display_name = "..." + display_name[-47:]
+                        
+                        comment_lines.extend([
+                            f"**File:** `{display_name}`",
+                            f"**Outcome:** {before_status} → {after_status}",
+                            "",
+                            "| Metric | BEFORE PR | AFTER PR | % Change |",
+                            "|--------|-----------|----------|----------|"
+                        ])
+                        
+                        # Format the probability values in scientific notation
+                        before_sci = f"{before_prob:.5e}"
+                        after_sci = f"{after_prob:.5e}"
+                        
+                        if percent_change == float('inf'):
+                            change_str = "+∞%"
+                        elif percent_change == 0:
+                            change_str = "0%"
+                        else:
+                            change_str = f"{percent_change:+.2f}%"
+                        
+                        comment_lines.extend([
+                            f"| PDF(Defective \\| Reconstruction Error) | {before_sci} | {after_sci} | {change_str} |",
+                            ""
+                        ])
                 else:
+                    comment_lines.append("No common files found for comparison.")
+            else:
+                # Fallback: assume same order and compare by index
+                min_len = min(len(before_df), len(after_df))
+                for i in range(min_len):
+                    before_prob = before_df.iloc[i]['probability_defective']
+                    after_prob = after_df.iloc[i]['probability_defective']
+                    before_pred = before_df.iloc[i]['prediction']
+                    after_pred = after_df.iloc[i]['prediction']
+                    
+                    if before_prob > 0:
+                        percent_change = ((after_prob - before_prob) / before_prob) * 100
+                    else:
+                        percent_change = float('inf') if after_prob > 0 else 0
+                    
+                    before_status = "Defective" if before_pred == 1 else "Non-Defective"
+                    after_status = "Defective" if after_pred == 1 else "Non-Defective"
+                    
                     comment_lines.extend([
-                        "✅ **Standard code review process should be sufficient**",
-                        "📋 **Continue with normal testing procedures**"
+                        f"**File {i+1}:**",
+                        f"**Outcome:** {before_status} → {after_status}",
+                        "",
+                        "| Metric | BEFORE PR | AFTER PR | % Change |",
+                        "|--------|-----------|----------|----------|"
+                    ])
+                    
+                    before_sci = f"{before_prob:.5e}"
+                    after_sci = f"{after_prob:.5e}"
+                    
+                    if percent_change == float('inf'):
+                        change_str = "+∞%"
+                    elif percent_change == 0:
+                        change_str = "0%"
+                    else:
+                        change_str = f"{percent_change:+.2f}%"
+                    
+                    comment_lines.extend([
+                        f"| PDF(Defective \\| Reconstruction Error) | {before_sci} | {after_sci} | {change_str} |",
+                        ""
                     ])
 
+            # Overall comparison summary
+            before_avg = before_df['probability_defective'].mean()
+            after_avg = after_df['probability_defective'].mean()
+            before_defective_count = (before_df['prediction'] == 1).sum()
+            after_defective_count = (after_df['prediction'] == 1).sum()
+            
+            overall_change = ((after_avg - before_avg) / before_avg) * 100 if before_avg > 0 else 0
+            
+            comment_lines.extend([
+                "### 📊 Overall Impact Summary",
+                "",
+                "| Metric | BEFORE PR | AFTER PR | Change |",
+                "|--------|-----------|----------|--------|",
+                f"| Average Defect Probability | {before_avg:.5e} | {after_avg:.5e} | {overall_change:+.2f}% |",
+                f"| Files Predicted Defective | {before_defective_count}/{len(before_df)} | {after_defective_count}/{len(after_df)} | {after_defective_count - before_defective_count:+d} |",
+                ""
+            ])
+
+            # Assessment
+            comment_lines.extend([
+                "### 📋 Impact Assessment",
+                ""
+            ])
+
+            if after_avg > before_avg:
+                if overall_change > 50:
+                    comment_lines.append("🚨 **SIGNIFICANT INCREASE IN RISK**: This PR substantially increases bug risk.")
+                elif overall_change > 10:
+                    comment_lines.append("⚠️ **MODERATE INCREASE IN RISK**: This PR increases bug risk.")
+                else:
+                    comment_lines.append("🟡 **SLIGHT INCREASE IN RISK**: Minor increase in bug risk detected.")
+            elif after_avg < before_avg:
+                if abs(overall_change) > 50:
+                    comment_lines.append("✅ **SIGNIFICANT IMPROVEMENT**: This PR substantially reduces bug risk.")
+                elif abs(overall_change) > 10:
+                    comment_lines.append("✅ **MODERATE IMPROVEMENT**: This PR reduces bug risk.")
+                else:
+                    comment_lines.append("🟢 **SLIGHT IMPROVEMENT**: Minor reduction in bug risk detected.")
+            else:
+                comment_lines.append("➡️ **NO SIGNIFICANT CHANGE**: Bug risk remains approximately the same.")
+
+            # Recommendations
+            comment_lines.extend([
+                "",
+                "### 💡 Recommendations",
+                ""
+            ])
+
+            if after_avg > before_avg and overall_change > 10:
+                comment_lines.extend([
+                    "🔍 **Increased scrutiny recommended for code review**",
+                    "🧪 **Consider additional testing for modified components**",
+                    "📝 **Review complex changes that may have introduced risk**",
+                    "⚠️ **Pay special attention to files with significant probability increases**"
+                ])
+            elif after_avg < before_avg:
+                comment_lines.extend([
+                    "✅ **Changes appear to improve code quality**",
+                    "📋 **Standard review process should be sufficient**",
+                    "🎯 **Good refactoring or bug fix patterns detected**"
+                ])
             else:
                 comment_lines.extend([
-                    "⚠️ **No model results available**",
-                    "",
-                    "The analysis completed but no prediction data was generated.",
-                    "This may indicate an issue with the feature extraction process."
+                    "📋 **Standard code review process recommended**",
+                    "🔍 **Focus on usual code quality aspects**"
                 ])
 
             comment_lines.extend([
                 "",
                 "---",
                 "*🤖 Generated by REPD Bug Prediction System*",
-                "*📊 Based on semantic analysis of Java code using trained autoencoders*"
+                "*📊 Based on semantic analysis of Java code using trained autoencoders*",
+                "*📈 Before/After comparison shows impact of PR changes*"
             ])
 
             return "\n".join(comment_lines)
 
+        def generate_single_state_comment(df, summary_data, state_name):
+            """Generate comment for single state when comparison isn't available"""
+            comment_lines = [
+                f"## 🔍 Java Bug Prediction Analysis - {state_name}",
+                "",
+                "**Analysis completed using REPD Deep Autoencoder (DA) model**",
+                ""
+            ]
+
+            if df is not None and len(df) > 0:
+                defective_count = (df['prediction'] == 1).sum()
+                defect_rate = (defective_count / len(df)) * 100
+                avg_prob = df['probability_defective'].mean()
+
+                comment_lines.extend([
+                    f"📊 **Files Analyzed:** {len(df)}",
+                    f"🤖 **Model Used:** Deep Autoencoder (DA)",
+                    "",
+                    "### 🔬 Analysis Results",
+                    "",
+                    f"- **Predicted Defective:** {defective_count}/{len(df)} files ({defect_rate:.1f}%)",
+                    f"- **Average Defect Probability:** {avg_prob:.4f}",
+                    ""
+                ])
+
+                # Top risky files
+                top_risky = df.nlargest(min(3, len(df)), 'probability_defective')
+                if len(top_risky) > 0:
+                    comment_lines.extend([
+                        "**🚨 Top Risky Files:**",
+                        "",
+                        "| File | Defect Probability | Status |",
+                        "|------|-------------------|--------|"
+                    ])
+
+                    for _, row in top_risky.iterrows():
+                        file_name = row.get('file_path', row.get('file_id', 'Unknown'))
+                        if isinstance(file_name, str) and len(file_name) > 50:
+                            file_name = "..." + file_name[-47:]
+
+                        prob = row['probability_defective']
+                        status = "🔴 High Risk" if prob > 0.7 else "🟡 Medium Risk" if prob > 0.3 else "🟢 Low Risk"
+                        comment_lines.append(f"| `{file_name}` | {prob:.4f} | {status} |")
+
+            return "\n".join(comment_lines)
+
         # Generate and save comment
-        comment_content = generate_pr_comment()
+        comment_content = generate_comparison_comment()
 
         with open('pr_comment.md', 'w') as f:
             f.write(comment_content)
@@ -429,7 +612,8 @@ jobs:
       with:
         name: bug-prediction-results
         path: |
-          pr_analysis_results/
+          before_analysis_results/
+          after_analysis_results/
           pr_comment.md
           changed_files.txt
         retention-days: 30
@@ -442,8 +626,8 @@ jobs:
         import pandas as pd
         from pathlib import Path
 
-        # Check if any files have very high defect probability
-        results_dir = "pr_analysis_results"
+        # Check if any files have very high defect probability in the after state
+        results_dir = "after_analysis_results"
         high_risk_threshold = 0.8
 
         if os.path.exists(results_dir):
@@ -464,4 +648,27 @@ jobs:
                 print("Consider additional code review and testing for these files.")
             else:
                 print("No extremely high-risk files detected.")
+                
+            # Also check for significant increases in risk
+            before_results_dir = "before_analysis_results"
+            if os.path.exists(before_results_dir):
+                before_files = list(Path(before_results_dir).glob("*_DA_predictions.csv"))
+                after_files = list(Path(results_dir).glob("*_DA_predictions.csv"))
+                
+                if before_files and after_files:
+                    try:
+                        before_df = pd.read_csv(before_files[0])
+                        after_df = pd.read_csv(after_files[0])
+                        
+                        before_avg = before_df['probability_defective'].mean()
+                        after_avg = after_df['probability_defective'].mean()
+                        
+                        if after_avg > before_avg:
+                            change_pct = ((after_avg - before_avg) / before_avg) * 100
+                            if change_pct > 50:
+                                print(f"::warning::Significant increase in bug risk detected: {change_pct:.1f}% increase in average defect probability")
+                            elif change_pct > 20:
+                                print(f"::notice::Moderate increase in bug risk detected: {change_pct:.1f}% increase in average defect probability")
+                    except Exception as e:
+                        print(f"Could not compare before/after results: {e}")
         EOF
