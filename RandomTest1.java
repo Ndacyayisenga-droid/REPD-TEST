@@ -280,11 +280,6 @@ public class RandomTest1 {
 
     // 100+ dummy methods below (each with a few lines)
     public void methodA(int x) { System.out.println("methodA: " + x); }
-    public void methodB(String s) { System.out.println("methodB: " + s); }
-    public void methodC(boolean b) { System.out.println("methodC: " + b); }
-    public void methodD(double d) { System.out.println("methodD: " + d); }
-    public void methodE(int[] arr) { System.out.println("methodE: " + Arrays.toString(arr)); }
-    public void methodF(List<String> list) { System.out.println("methodF: " + list); }
     public void methodG(Map<String, String> map) { System.out.println("methodG: " + map); }
     public void methodH(int x) { System.out.println("methodH: " + x); }
     public void methodI(int x) { System.out.println("methodI: " + x); }
@@ -393,4 +388,24 @@ public class RandomTest1 {
 
     // Example static class
     public static class StaticClass { public static int staticMethod(int x) { return x+1; } }
+
+    public void methodB(String b) {
+        System.out.println("Method B: " + b);
+    }
+
+    public void methodC(boolean c) {
+        System.out.println("Method C: " + c);
+    }
+    
+    public void methodD(double d) {
+        System.out.println("Method D: " + d);
+    }
+    
+    public void methodE(int[] arr) {
+        System.out.println("Method E: " + Arrays.toString(arr));
+    }
+    
+    public void methodF(List<String> list) {
+        System.out.println("Method F: " + list);
+    }
 }
