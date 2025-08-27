@@ -17,8 +17,10 @@ public class TestFile3 {
     }
 
     public static void main(String[] args) {
-        TestFile3 test = new TestFile3();
-        test.runDataProcessingTests();
+        TestFile3 tester = new TestFile3();
+        System.out.println("Beginning data structure and algorithm tests...");
+        tester.executeTests();
+        System.out.println("Algorithm testing phase completed.");
     }
 
     public void runDataProcessingTests() {

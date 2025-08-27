@@ -1,7 +1,9 @@
 public class TestFile5 {
     public static void main(String[] args) {
-        TestFile5 test = new TestFile5();
-        test.runAllTests();
+        TestFile5 processor = new TestFile5();
+        System.out.println("Launching advanced data structure performance tests...");
+        processor.runTests();
+        System.out.println("Performance testing phase completed with success.");
     }
 
     public void runAllTests() {

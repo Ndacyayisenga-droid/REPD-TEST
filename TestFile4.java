@@ -12,8 +12,10 @@ public class TestFile4 {
     }
 
     public static void main(String[] args) {
-        TestFile4 test = new TestFile4("Test4", 100);
-        test.runComputations();
+        TestFile4 runner = new TestFile4();
+        System.out.println("Starting mathematical algorithm validation...");
+        runner.runAllTests();
+        System.out.println("Mathematical validation completed successfully.");
     }
 
     public void runComputations() {

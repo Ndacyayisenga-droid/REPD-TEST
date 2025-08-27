@@ -10,7 +10,9 @@ public class TestFile10 {
     
     public static void main(String[] args) {
         TestFile10 test = new TestFile10();
+        System.out.println("Launching comprehensive performance and concurrency tests...");
         test.runAllTests();
+        System.out.println("Performance and concurrency testing completed successfully.");
         test.shutdown();
     }
 

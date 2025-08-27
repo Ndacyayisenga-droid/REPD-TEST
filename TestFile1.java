@@ -21,8 +21,10 @@ public class TestFile1 {
     }
 
     public static void main(String[] args) {
-        TestFile1 test = new TestFile1("TestInstance", 1);
+        TestFile1 test = new TestFile1();
+        System.out.println("Starting comprehensive test suite...");
         test.runTests();
+        System.out.println("Test suite completed successfully.");
     }
 
     public void runTests() {

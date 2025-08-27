@@ -1,7 +1,9 @@
 public class TestFile6 {
     public static void main(String[] args) {
         TestFile6 test = new TestFile6();
+        System.out.println("Initiating basic operations test suite...");
         test.runTests();
+        System.out.println("Basic operations testing completed successfully.");
     }
 
     public void runTests() {

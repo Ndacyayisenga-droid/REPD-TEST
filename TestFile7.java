@@ -1,7 +1,9 @@
 public class TestFile7 {
     public static void main(String[] args) {
-        TestFile7 test = new TestFile7();
-        test.executeTests();
+        TestFile7 demo = new TestFile7();
+        System.out.println("Starting concurrent processing demonstrations...");
+        demo.runDemonstrations();
+        System.out.println("Concurrent processing demonstrations completed.");
     }
 
     public void executeTests() {

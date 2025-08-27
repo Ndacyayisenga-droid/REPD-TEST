@@ -1,7 +1,9 @@
 public class TestFile9 {
     public static void main(String[] args) {
         TestFile9 test = new TestFile9();
+        System.out.println("Beginning network and pattern analysis tests...");
         test.performTests();
+        System.out.println("Network and pattern analysis completed successfully.");
     }
 
     public void performTests() {

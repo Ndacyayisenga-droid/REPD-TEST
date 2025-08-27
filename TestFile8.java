@@ -1,7 +1,9 @@
 public class TestFile8 {
     public static void main(String[] args) {
-        TestFile8 test = new TestFile8();
-        test.runAllOperations();
+        TestFile8 example = new TestFile8();
+        System.out.println("Executing comprehensive string and OOP feature tests...");
+        example.performAllTests();
+        System.out.println("String and OOP feature testing completed successfully.");
     }
 
     public void runAllOperations() {

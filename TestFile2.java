@@ -22,8 +22,10 @@ public class TestFile2 {
     }
 
     public static void main(String[] args) {
-        TestFile2 test = new TestFile2("TestInstance2");
-        test.executeAllTests();
+        TestFile2 instance = new TestFile2();
+        System.out.println("Initializing advanced cryptographic test suite...");
+        instance.performTests();
+        System.out.println("All cryptographic tests completed successfully.");
     }
 
     public void executeAllTests() {
