@@ -396,16 +396,22 @@ public class RandomTest1 {
     public void methodC(boolean c) {
         System.out.println("Method C: " + c);
     }
-    
+
     public void methodD(double d) {
         System.out.println("Method D: " + d);
     }
-    
+
     public void methodE(int[] arr) {
         System.out.println("Method E: " + Arrays.toString(arr));
     }
-    
+
     public void methodF(List<String> list) {
         System.out.println("Method F: " + list);
     }
+
+    public static class CustomStaticClass { public static int customStaticMethod(int x) { return x+1; } 
+    }
+
+    public static class CustomStaticClasss { public static int customStaticMethod(int x) { return x+1; } }
+
 }

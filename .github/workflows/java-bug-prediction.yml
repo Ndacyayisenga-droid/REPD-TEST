@@ -81,9 +81,17 @@ jobs:
         echo "Changed files content:"
         cat changed_files.txt || echo "No changed_files.txt found"
 
+        # If no changed files found, look for any Java files in the repository
+        if [ ! -s changed_files.txt ]; then
+          echo "No changed Java files found, looking for any Java files in repository..."
+          find . -name "*.java" -type f > changed_files.txt || true
+          echo "Found Java files in repository:"
+          cat changed_files.txt || echo "No Java files found in repository"
+        fi
+
         if [ -s changed_files.txt ]; then
           echo "changed_files_exist=true" >> $GITHUB_OUTPUT
-          echo "Changed Java files:"
+          echo "Java files to analyze:"
           cat changed_files.txt
 
           # Store changed files for later use
@@ -92,11 +100,7 @@ jobs:
           echo "EOF" >> $GITHUB_ENV
         else
           echo "changed_files_exist=false" >> $GITHUB_OUTPUT
-          echo "No Java files changed in this PR"
-          
-          # For testing, let's also check if there are any Java files in the current directory
-          echo "Checking for Java files in current directory:"
-          find . -name "*.java" -type f || echo "No Java files found"
+          echo "No Java files found in this PR or repository"
         fi
 
     - name: Analyze changed files
@@ -220,7 +224,7 @@ jobs:
                 with open(error_file, 'r') as f:
                     error_content = f.read().strip()
                 if "No Java files found to analyze" in error_content:
-                    return "## Java Bug Prediction Analysis\n\n**No Java files found** - no Java files were detected in this PR for analysis."
+                    return "## Java Bug Prediction Analysis\n\n**No Java files found** - no Java files were detected in this PR or repository for analysis."
                 elif "Analysis failed" in error_content:
                     return "## Java Bug Prediction Analysis\n\n**Analysis failed** - the bug prediction system encountered an error. Please check the workflow logs for details."
 
@@ -249,6 +253,12 @@ jobs:
                     "**Analysis completed using REPD Deep Autoencoder (DA) model**",
                     ""
                 ])
+            
+            # Add note about what files were analyzed
+            comment_lines.extend([
+                "*Note: Analysis performed on all Java files in the repository.*",
+                ""
+            ])
 
             # Load summary if available
             summary_data = {}
