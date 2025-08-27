@@ -1,13 +1,16 @@
 package test;
 
 import java.util.*;
-import java.io.*;
 
 public class RandomTest1 {
     public static void main(String[] args) {
         System.out.println("Hello from RandomTest1!");
         RandomTest1 test = new RandomTest1();
         test.runAll();
+    }
+
+    public void methodA(String a) {
+        System.out.println("Method A: " + a);
     }
 
     public void runAll() {

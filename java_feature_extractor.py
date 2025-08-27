@@ -208,7 +208,7 @@ class JavaFeatureExtractor:
         # Import extractors
         import sys
         sys.path.append('semantic-dataset-creation')
-        from extractor import DeepAutoencoder, ConvolutionalAutoencoder, DeepBeliefNetwork
+        from extractor import DeepAutoencoder
         
         # Prepare data (pad to same length)
         prepared_data = self._prepare_data(ast_vectors)
@@ -216,7 +216,7 @@ class JavaFeatureExtractor:
         features = {}
         
         try:
-            # Deep Autoencoder features
+            # Deep Autoencoder features only
             logger.info("Extracting DA features")
             da_extractor = DeepAutoencoder()
             da_features = da_extractor.get_features(prepared_data, None)
@@ -224,26 +224,6 @@ class JavaFeatureExtractor:
             
         except Exception as e:
             logger.error(f"DA feature extraction failed: {e}")
-            
-        try:
-            # Convolutional Autoencoder features
-            logger.info("Extracting CA features")
-            ca_extractor = ConvolutionalAutoencoder()
-            ca_features = ca_extractor.get_features(prepared_data, None)
-            features['CA'] = np.array([x.flatten() for x in ca_features])
-            
-        except Exception as e:
-            logger.error(f"CA feature extraction failed: {e}")
-            
-        try:
-            # Deep Belief Network features
-            logger.info("Extracting DBN features")
-            dbn_extractor = DeepBeliefNetwork()
-            dbn_features = dbn_extractor.get_features(prepared_data, None)
-            features['DBN'] = np.array([x.flatten() for x in dbn_features])
-            
-        except Exception as e:
-            logger.error(f"DBN feature extraction failed: {e}")
         
         return features
     

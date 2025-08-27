@@ -51,16 +51,15 @@ class BugPredictor:
                     training_results = pickle.load(f)
                     self.scalers = training_results.get('scalers', {})
             
-            # Load individual models
-            model_types = ['DA', 'CA', 'DBN']
-            for model_type in model_types:
-                model_path = os.path.join(self.model_dir, f"repd_model_{model_type}.pkl")
-                if os.path.exists(model_path):
-                    with open(model_path, 'rb') as f:
-                        self.models[model_type] = pickle.load(f)
-                    logger.info(f"Loaded {model_type} model")
-                else:
-                    logger.warning(f"Model not found: {model_path}")
+            # Load only DA model
+            model_type = 'DA'
+            model_path = os.path.join(self.model_dir, f"repd_model_{model_type}.pkl")
+            if os.path.exists(model_path):
+                with open(model_path, 'rb') as f:
+                    self.models[model_type] = pickle.load(f)
+                logger.info(f"Loaded {model_type} model")
+            else:
+                logger.warning(f"DA model not found: {model_path}")
                     
         except Exception as e:
             logger.error(f"Error loading models: {e}")
@@ -102,12 +101,13 @@ class BugPredictor:
         
         return results
     
-    def predict_files(self, java_files: List[str]) -> Dict[str, pd.DataFrame]:
+    def predict_files(self, java_files: List[str], output_dir: str = "prediction_results") -> Dict[str, pd.DataFrame]:
         """
         Predict bugs in specific Java files.
         
         Args:
             java_files: List of Java file paths
+            output_dir: Directory to save results
             
         Returns:
             Dictionary of prediction results for each model type
@@ -127,6 +127,11 @@ class BugPredictor:
             if model_type in features:
                 predictions = self._predict_with_model(features[model_type], model_type, java_files)
                 results[model_type] = predictions
+        
+        # Save results if any were generated
+        if results:
+            os.makedirs(output_dir, exist_ok=True)
+            self._save_results(results, output_dir, "files_analysis")
         
         return results
     
@@ -355,7 +360,7 @@ def main():
     if args.repo:
         results = predictor.predict_repository(args.repo, args.output)
     else:
-        results = predictor.predict_files(args.files)
+        results = predictor.predict_files(args.files, args.output)
     
     if args.report and results:
         report_file = os.path.join(args.output, "prediction_report.md")

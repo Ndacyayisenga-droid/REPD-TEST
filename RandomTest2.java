@@ -1,7 +1,6 @@
 package test;
 
 import java.util.*;
-import java.io.*;
 
 public class RandomTest2 {
     public static void main(String[] args) {
