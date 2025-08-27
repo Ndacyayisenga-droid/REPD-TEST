@@ -74,6 +74,13 @@ jobs:
         # Get list of changed Java files in the PR
         git diff --name-only origin/${{ github.base_ref }}..HEAD | grep '\.java$' > changed_files.txt || true
 
+        echo "Debug: Checking for changed files..."
+        echo "Current directory: $(pwd)"
+        echo "Git diff command output:"
+        git diff --name-only origin/${{ github.base_ref }}..HEAD || echo "Git diff failed"
+        echo "Changed files content:"
+        cat changed_files.txt || echo "No changed_files.txt found"
+
         if [ -s changed_files.txt ]; then
           echo "changed_files_exist=true" >> $GITHUB_OUTPUT
           echo "Changed Java files:"
@@ -86,6 +93,10 @@ jobs:
         else
           echo "changed_files_exist=false" >> $GITHUB_OUTPUT
           echo "No Java files changed in this PR"
+          
+          # For testing, let's also check if there are any Java files in the current directory
+          echo "Checking for Java files in current directory:"
+          find . -name "*.java" -type f || echo "No Java files found"
         fi
 
     - name: Analyze changed files
@@ -101,6 +112,14 @@ jobs:
             existing_files+=("$file")
           fi
         done < files_to_analyze.txt
+
+        echo "Debug: Analysis step"
+        echo "Files to analyze content:"
+        cat files_to_analyze.txt || echo "No files_to_analyze.txt found"
+        echo "CHANGED_FILES environment variable:"
+        echo "$CHANGED_FILES"
+        echo "Number of existing files: ${#existing_files[@]}"
+        echo "Existing files: ${existing_files[*]}"
 
         if [ ${#existing_files[@]} -gt 0 ]; then
           echo "Analyzing files: ${existing_files[*]}"
@@ -140,15 +159,47 @@ jobs:
           ls -la pr_analysis_results/ || echo "Results directory not created"
         else
           echo "No existing Java files to analyze"
+          
+          # Fallback: analyze any Java files in the repository
+          echo "Trying fallback: analyzing any Java files in repository..."
+          fallback_files=($(find . -name "*.java" -type f | head -5))
+          if [ ${#fallback_files[@]} -gt 0 ]; then
+            echo "Found fallback files: ${fallback_files[*]}"
+            echo "Testing with first fallback file: ${fallback_files[0]}"
+            python -u simple_bug_predictor.py --files "${fallback_files[0]}" --output pr_analysis_results || {
+              echo "Fallback analysis also failed"
+              mkdir -p pr_analysis_results
+              echo "Analysis failed - no files could be processed" > pr_analysis_results/error.txt
+            }
+          else
+            echo "No Java files found for fallback analysis"
+            mkdir -p pr_analysis_results
+            echo "No Java files found to analyze" > pr_analysis_results/error.txt
+          fi
+        fi
+
+    - name: Ensure results directory exists
+      run: |
+        # Ensure results directory exists for comment generation
+        mkdir -p pr_analysis_results || true
+        if [ ! -f "pr_analysis_results/error.txt" ] && [ ! -f "pr_analysis_results/*_DA_predictions.csv" ]; then
+          echo "No analysis results found, creating error file"
+          echo "No Java files found to analyze" > pr_analysis_results/error.txt
         fi
 
     - name: Generate PR comment
-      if: steps.changed-files.outputs.changed_files_exist == 'true'
       run: |
         echo "Generating PR comment..."
         echo "Current directory: $(pwd)"
         echo "Results directory contents:"
         ls -la pr_analysis_results/ || echo "Results directory not found"
+        
+        # Always try to generate a comment, even if no files were found
+        if [ ! -d "pr_analysis_results" ]; then
+          echo "No results directory found, creating error comment"
+          mkdir -p pr_analysis_results
+          echo "Analysis failed - no results generated" > pr_analysis_results/error.txt
+        fi
         
         python << 'EOF'
         import os
@@ -159,9 +210,19 @@ jobs:
         def generate_pr_comment():
             results_dir = "pr_analysis_results"
 
-            # Check if analysis was completed
-            if not os.path.exists(results_dir):
-                return "## 🔍 Java Bug Prediction Analysis\n\n⚠️ **Analysis could not be completed** - no results directory found."
+                  # Check if analysis was completed
+      if not os.path.exists(results_dir):
+          return "## 🔍 Java Bug Prediction Analysis\n\n⚠️ **Analysis could not be completed** - no results directory found."
+      
+      # Check if there was an error indicating no files found
+      error_file = os.path.join(results_dir, "error.txt")
+      if os.path.exists(error_file):
+          with open(error_file, 'r') as f:
+              error_content = f.read().strip()
+          if "No Java files found to analyze" in error_content:
+              return "## 🔍 Java Bug Prediction Analysis\n\n⚠️ **No Java files found** - no Java files were detected in this PR for analysis."
+          elif "Analysis failed" in error_content:
+              return "## 🔍 Java Bug Prediction Analysis\n\n⚠️ **Analysis failed** - the bug prediction system encountered an error. Please check the workflow logs for details."
 
             # Look for prediction files (DA model only)
             prediction_files = list(Path(results_dir).glob("*_DA_predictions.csv"))
@@ -358,7 +419,6 @@ jobs:
         EOF
 
     - name: Post comment to PR
-      if: steps.changed-files.outputs.changed_files_exist == 'true'
       uses: actions/github-script@v7
       with:
         script: |
@@ -388,7 +448,6 @@ jobs:
           }
 
     - name: Upload analysis results
-      if: steps.changed-files.outputs.changed_files_exist == 'true'
       uses: actions/upload-artifact@v4
       with:
         name: bug-prediction-results
@@ -399,7 +458,6 @@ jobs:
         retention-days: 30
 
     - name: Check for high-risk files
-      if: steps.changed-files.outputs.changed_files_exist == 'true'
       run: |
         python << 'EOF'
         import os

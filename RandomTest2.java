@@ -389,4 +389,30 @@ public class RandomTest2 {
 
     // Example static class
     public static class StaticClass { public static int staticMethod(int x) { return x+1; } }
+
+    // Example custom class
+    public class CustomClass { public int customMethod(int x) { return x+1; } }
+
+    // Example custom interface
+    public interface CustomInterface { int customMethod(int x); }
+    public class CustomInterfaceImpl implements CustomInterface {
+        public int customMethod(int x) { return x+1; }
+    }
+
+    // Example custom abstract class
+    public abstract class CustomAbstractClass { abstract int customMethod(int x); }
+    public class CustomAbstractClassImpl extends CustomAbstractClass {
+        public int customMethod(int x) { return x+1; }
+    }
+
+    // Example custom enum
+    public enum CustomEnum { VALUE1, VALUE2, VALUE3 }
+
+    // Example custom inner class
+    public class CustomInnerClass { public int customInnerMethod(int x) { return x+1; } }
+
+    // Example custom static class
+    public static class CustomStaticClass { public static int customStaticMethod(int x) { return x+1; } 
+}
+
 }
