@@ -274,7 +274,7 @@ jobs:
             after_df, after_summary = load_prediction_data(after_results_dir)
 
             comment_lines = [
-                "## Bug Prediction Analysis",
+                "## 📊 Bug Prediction Analysis",
                 ""
             ]
 
@@ -308,6 +308,12 @@ jobs:
                 ])
                 return "\n".join(comment_lines)
 
+            # Debug: Print available columns
+            print("DEBUG: Before DataFrame columns:", before_df.columns.tolist() if before_df is not None else "None")
+            print("DEBUG: After DataFrame columns:", after_df.columns.tolist() if after_df is not None else "None")
+            print("DEBUG: Before DataFrame shape:", before_df.shape if before_df is not None else "None")
+            print("DEBUG: After DataFrame shape:", after_df.shape if after_df is not None else "None")
+
             if 'file_path' in before_df.columns and 'file_path' in after_df.columns:
                 file_col = 'file_path'
             elif 'file_id' in before_df.columns and 'file_id' in after_df.columns:
@@ -323,22 +329,27 @@ jobs:
                 
                 if common_files:
                     for file_path in sorted(common_files):
-                        before_pdf_def = before_df_indexed.loc[file_path, 'pdf_defective']
-                        after_pdf_def = after_df_indexed.loc[file_path, 'pdf_defective']
-                        before_pdf_non = before_df_indexed.loc[file_path, 'pdf_non_defective']
-                        after_pdf_non = after_df_indexed.loc[file_path, 'pdf_non_defective']
+                        # Use probability_defective instead of pdf_defective
+                        before_prob_defective = before_df_indexed.loc[file_path, 'probability_defective']
+                        after_prob_defective = after_df_indexed.loc[file_path, 'probability_defective']
+                        
+                        # Calculate non-defective probabilities
+                        before_prob_non_defective = 1.0 - before_prob_defective
+                        after_prob_non_defective = 1.0 - after_prob_defective
+                        
                         before_pred = before_df_indexed.loc[file_path, 'prediction']
                         after_pred = after_df_indexed.loc[file_path, 'prediction']
                         
-                        if before_pdf_def > 0:
-                            def_change = ((after_pdf_def - before_pdf_def) / before_pdf_def) * 100
+                        # Calculate percentage changes
+                        if before_prob_defective > 0:
+                            def_change = ((after_prob_defective - before_prob_defective) / before_prob_defective) * 100
                         else:
-                            def_change = float('inf') if after_pdf_def > 0 else 0
+                            def_change = float('inf') if after_prob_defective > 0 else 0
                         
-                        if before_pdf_non > 0:
-                            non_change = ((after_pdf_non - before_pdf_non) / before_pdf_non) * 100
+                        if before_prob_non_defective > 0:
+                            non_change = ((after_prob_non_defective - before_prob_non_defective) / before_prob_non_defective) * 100
                         else:
-                            non_change = float('inf') if after_pdf_non > 0 else 0
+                            non_change = float('inf') if after_prob_non_defective > 0 else 0
                         
                         before_status = "Defective" if before_pred == 1 else "Non-Defective"
                         after_status = "Defective" if after_pred == 1 else "Non-Defective"
@@ -353,11 +364,13 @@ jobs:
                             "|--------|-----------|----------|----------|"
                         ])
                         
-                        before_def_sci = f"{before_pdf_def:.5e}"
-                        after_def_sci = f"{after_pdf_def:.5e}"
-                        before_non_sci = f"{before_pdf_non:.5e}"
-                        after_non_sci = f"{after_pdf_non:.5e}"
+                        # Format in scientific notation
+                        before_def_sci = f"{before_prob_defective:.5e}"
+                        after_def_sci = f"{after_prob_defective:.5e}"
+                        before_non_sci = f"{before_prob_non_defective:.5e}"
+                        after_non_sci = f"{after_prob_non_defective:.5e}"
                         
+                        # Format percentage changes
                         if def_change == float('inf'):
                             def_change_str = "+∞%"
                         elif def_change == 0:
@@ -380,28 +393,35 @@ jobs:
                 else:
                     comment_lines.append("No common files found for comparison.")
             else:
+                # Fallback: assume same order and compare by index
                 min_len = min(len(before_df), len(after_df))
                 for i in range(min_len):
-                    before_pdf_def = before_df.iloc[i]['pdf_defective']
-                    after_pdf_def = after_df.iloc[i]['pdf_defective']
-                    before_pdf_non = before_df.iloc[i]['pdf_non_defective']
-                    after_pdf_non = after_df.iloc[i]['pdf_non_defective']
+                    # Use probability_defective instead of pdf_defective
+                    before_prob_defective = before_df.iloc[i]['probability_defective']
+                    after_prob_defective = after_df.iloc[i]['probability_defective']
+                    
+                    # Calculate non-defective probabilities
+                    before_prob_non_defective = 1.0 - before_prob_defective
+                    after_prob_non_defective = 1.0 - after_prob_defective
+                    
                     before_pred = before_df.iloc[i]['prediction']
                     after_pred = after_df.iloc[i]['prediction']
                     
-                    if before_pdf_def > 0:
-                        def_change = ((after_pdf_def - before_pdf_def) / before_pdf_def) * 100
+                    # Calculate percentage changes
+                    if before_prob_defective > 0:
+                        def_change = ((after_prob_defective - before_prob_defective) / before_prob_defective) * 100
                     else:
-                        def_change = float('inf') if after_pdf_def > 0 else 0
+                        def_change = float('inf') if after_prob_defective > 0 else 0
                     
-                    if before_pdf_non > 0:
-                        non_change = ((after_pdf_non - before_pdf_non) / before_pdf_non) * 100
+                    if before_prob_non_defective > 0:
+                        non_change = ((after_prob_non_defective - before_prob_non_defective) / before_prob_non_defective) * 100
                     else:
-                        non_change = float('inf') if after_pdf_non > 0 else 0
+                        non_change = float('inf') if after_prob_non_defective > 0 else 0
                     
                     before_status = "Defective" if before_pred == 1 else "Non-Defective"
                     after_status = "Defective" if after_pred == 1 else "Non-Defective"
                     
+                    # Get file name
                     file_name = "Unknown"
                     if 'file_path' in before_df.columns:
                         file_name = before_df.iloc[i]['file_path']
@@ -418,11 +438,13 @@ jobs:
                         "|--------|-----------|----------|----------|"
                     ])
                     
-                    before_def_sci = f"{before_pdf_def:.5e}"
-                    after_def_sci = f"{after_pdf_def:.5e}"
-                    before_non_sci = f"{before_pdf_non:.5e}"
-                    after_non_sci = f"{after_pdf_non:.5e}"
+                    # Format in scientific notation
+                    before_def_sci = f"{before_prob_defective:.5e}"
+                    after_def_sci = f"{after_prob_defective:.5e}"
+                    before_non_sci = f"{before_prob_non_defective:.5e}"
+                    after_non_sci = f"{after_prob_non_defective:.5e}"
                     
+                    # Format percentage changes
                     if def_change == float('inf'):
                         def_change_str = "+∞%"
                     elif def_change == 0:
@@ -454,7 +476,8 @@ jobs:
             if df is not None and len(df) > 0:
                 defective_count = (df['prediction'] == 1).sum()
                 defect_rate = (defective_count / len(df)) * 100
-                avg_pdf_def = df['pdf_defective'].mean()
+                # Use probability_defective instead of pdf_defective
+                avg_prob_defective = df['probability_defective'].mean()
 
                 comment_lines.extend([
                     f"📊 **Files Analyzed:** {len(df)}",
@@ -462,17 +485,18 @@ jobs:
                     "### 🔬 Analysis Results",
                     "",
                     f"- **Predicted Defective:** {defective_count}/{len(df)} files ({defect_rate:.1f}%)",
-                    f"- **Average PDF Defective:** {avg_pdf_def:.4e}",
+                    f"- **Average Probability Defective:** {avg_prob_defective:.4e}",
                     ""
                 ])
 
-                top_risky = df.nlargest(min(3, len(df)), 'pdf_defective')
+                # Use probability_defective for sorting
+                top_risky = df.nlargest(min(3, len(df)), 'probability_defective')
                 if len(top_risky) > 0:
                     comment_lines.extend([
                         "**🚨 Top Risky Files:**",
                         "",
-                        "| File | PDF Defective | Status |",
-                        "|------|-------------------|--------|"
+                        "| File | Probability Defective | Status |",
+                        "|------|----------------------|--------|"
                     ])
 
                     for _, row in top_risky.iterrows():
@@ -480,8 +504,9 @@ jobs:
                         if isinstance(file_name, str) and len(file_name) > 50:
                             file_name = "..." + file_name[-47:]
 
-                        prob = row['pdf_defective']
-                        status = "🔴 High Risk" if prob > 0.00000001 else "🟢 Low Risk"
+                        # Use probability_defective instead of pdf_defective
+                        prob = row['probability_defective']
+                        status = "🔴 High Risk" if prob > 0.5 else "🟢 Low Risk"
                         comment_lines.append(f"| `{file_name}` | {prob:.4e} | {status} |")
 
             return "\n".join(comment_lines)
