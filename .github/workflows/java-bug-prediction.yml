@@ -40,7 +40,7 @@ jobs:
     - name: Install Python dependencies
       run: |
         python -m pip install --upgrade pip
-        pip install numpy pandas scikit-learn tensorflow torch scipy tqdm
+        pip install numpy==1.26.4 pandas scikit-learn==1.7.1 tensorflow torch scipy tqdm
         pip install -r requirements.txt
         
     - name: Verify AST encoder setup
@@ -123,10 +123,13 @@ jobs:
           echo "  Report: yes"
           
           python -u bug_prediction_pipeline.py --files "${existing_files[@]}" --output pr_analysis_results --report 2>&1 || {
-            echo "Analysis failed with exit code $?"
-            echo "Creating empty results directory for fallback"
-            mkdir -p pr_analysis_results
-            echo "Analysis failed - check logs for details" > pr_analysis_results/error.txt
+            echo "Main analysis failed with exit code $?"
+            echo "Trying simple bug predictor as fallback..."
+            python -u simple_bug_predictor.py --files "${existing_files[@]}" --output pr_analysis_results || {
+              echo "Simple predictor also failed, creating empty results directory"
+              mkdir -p pr_analysis_results
+              echo "Analysis failed - check logs for details" > pr_analysis_results/error.txt
+            }
           }
           
           echo "Checking results directory..."
@@ -166,9 +169,21 @@ jobs:
             comment_lines = [
                 "## 🔍 Java Bug Prediction Analysis",
                 "",
-                "**Analysis completed using REPD Deep Autoencoder (DA) model**",
-                ""
             ]
+            
+            # Check if simple predictor was used
+            if os.path.exists(os.path.join(results_dir, "error.txt")):
+                comment_lines.extend([
+                    "⚠️ **Analysis completed using Simple Heuristic Fallback**",
+                    "",
+                    "*The main REPD pipeline failed, so basic code metrics were used for prediction.*",
+                    ""
+                ])
+            else:
+                comment_lines.extend([
+                    "**Analysis completed using REPD Deep Autoencoder (DA) model**",
+                    ""
+                ])
 
             # Load summary if available
             summary_data = {}
@@ -194,9 +209,19 @@ jobs:
                 total_files = len(list(model_results.values())[0]) if model_results else 0
                 comment_lines.extend([
                     f"📊 **Files Analyzed:** {total_files}",
-                    f"🤖 **Model Used:** Deep Autoencoder (DA)",
-                    ""
                 ])
+                
+                # Check if simple predictor was used
+                if os.path.exists(os.path.join(results_dir, "error.txt")):
+                    comment_lines.extend([
+                        f"🤖 **Model Used:** Simple Heuristic Fallback",
+                        ""
+                    ])
+                else:
+                    comment_lines.extend([
+                        f"🤖 **Model Used:** Deep Autoencoder (DA)",
+                        ""
+                    ])
 
                 # Results for DA model
                 if 'DA' in model_results:
@@ -205,8 +230,14 @@ jobs:
                     defect_rate = (defective_count / len(df)) * 100 if len(df) > 0 else 0
                     avg_prob = df['probability_defective'].mean()
 
+                    # Check if simple predictor was used
+                    if os.path.exists(os.path.join(results_dir, "error.txt")):
+                        model_name = "Simple Heuristic Fallback"
+                    else:
+                        model_name = "Deep Autoencoder (DA) Model"
+
                     comment_lines.extend([
-                        "### 🔬 Deep Autoencoder (DA) Model Results",
+                        f"### 🔬 {model_name} Results",
                         "",
                         f"- **Predicted Defective:** {defective_count}/{len(df)} files ({defect_rate:.1f}%)",
                         f"- **Average Defect Probability:** {avg_prob:.4f}",

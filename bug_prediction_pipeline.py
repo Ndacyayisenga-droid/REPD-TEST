@@ -49,7 +49,11 @@ class BugPredictor:
             if os.path.exists(results_path):
                 with open(results_path, 'rb') as f:
                     training_results = pickle.load(f)
-                    self.scalers = training_results.get('scalers', {})
+                    # Scalers are stored within each model's data
+                    self.scalers = {}
+                    for model_type in training_results.keys():
+                        if model_type in training_results and 'scaler' in training_results[model_type]:
+                            self.scalers[model_type] = training_results[model_type]['scaler']
             
             # Load only DA model
             model_type = 'DA'

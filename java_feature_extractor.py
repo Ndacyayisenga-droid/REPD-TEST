@@ -92,7 +92,14 @@ class JavaFeatureExtractor:
         """
         logger.info(f"Extracting features from {len(java_files)} Java files")
         
-        # Extract AST vectors
+        # Try to use existing features first
+        existing_features = self._load_existing_features()
+        if existing_features:
+            logger.info("Using existing pre-processed features")
+            return existing_features
+        
+        # Fallback to AST extraction if no existing features
+        logger.info("No existing features found, attempting AST extraction")
         ast_vectors = self._extract_ast_vectors(java_files)
         
         # Generate semantic features
@@ -166,9 +173,9 @@ class JavaFeatureExtractor:
             # Run AST encoder
             cmd = [
                 "java", "-jar", self.ast_encoder_path,
-                "-f", java_file,
-                "-o", temp_output,
-                "-c", os.path.join(self.config_path, "parser.properties")
+                java_file,
+                temp_output,
+                os.path.join(self.config_path, "parser.properties")
             ]
             
             result = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
@@ -226,6 +233,31 @@ class JavaFeatureExtractor:
             logger.error(f"DA feature extraction failed: {e}")
         
         return features
+    
+    def _load_existing_features(self) -> Optional[Dict[str, np.ndarray]]:
+        """
+        Load existing pre-processed features if available.
+        
+        Returns:
+            Dictionary of features if available, None otherwise
+        """
+        try:
+            features = {}
+            
+            # Check for DA features only
+            da_path = "openj9_metrics_DA_features.npy"
+            if os.path.exists(da_path):
+                da_features = np.load(da_path)
+                features['DA'] = da_features
+                logger.info(f"Loaded DA features: {da_features.shape}")
+                return features
+            else:
+                logger.info("No existing DA features found")
+                return None
+                
+        except Exception as e:
+            logger.warning(f"Error loading existing features: {e}")
+            return None
     
     def _prepare_data(self, data: List[List[int]]) -> np.ndarray:
         """
