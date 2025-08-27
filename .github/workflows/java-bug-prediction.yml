@@ -71,7 +71,6 @@ jobs:
     - name: Get changed Java files
       id: changed-files
       run: |
-        # Get list of changed Java files in the PR
         git diff --name-only origin/${{ github.base_ref }}..HEAD | grep '\.java$' > changed_files.txt || true
 
         echo "Debug: Checking for changed files..."
@@ -81,7 +80,6 @@ jobs:
         echo "Changed files content:"
         cat changed_files.txt || echo "No changed_files.txt found"
 
-        # If no changed files found, look for any Java files in the repository
         if [ ! -s changed_files.txt ]; then
           echo "No changed Java files found, looking for any Java files in repository..."
           find . -name "*.java" -type f > changed_files.txt || true
@@ -94,7 +92,6 @@ jobs:
           echo "Java files to analyze:"
           cat changed_files.txt
 
-          # Store changed files for later use
           echo "CHANGED_FILES<<EOF" >> $GITHUB_ENV
           cat changed_files.txt
           echo "EOF" >> $GITHUB_ENV
@@ -108,11 +105,9 @@ jobs:
       run: |
         echo "Analyzing BEFORE state (base branch)..."
         
-        # Checkout the base branch to analyze original files
         git stash push -m "Stash current changes"
         git checkout origin/${{ github.base_ref }}
         
-        # Create list of files that exist in base branch
         echo "$CHANGED_FILES" > files_to_analyze.txt
         existing_files=()
         while IFS= read -r file; do
@@ -137,17 +132,14 @@ jobs:
           echo "No files found in base branch" > before_analysis_results/error.txt
         fi
         
-        # Return to PR branch
         git checkout -
         git stash pop || echo "No stash to pop"
 
     - name: Analyze AFTER state (current branch)
       if: steps.changed-files.outputs.changed_files_exist == 'true'
       run: |
-        # Create list of changed Java files
         echo "$CHANGED_FILES" > files_to_analyze.txt
 
-        # Filter out files that actually exist (in case of deletions)
         existing_files=()
         while IFS= read -r file; do
           if [ -f "$file" ]; then
@@ -189,7 +181,6 @@ jobs:
         else
           echo "No existing Java files to analyze"
           
-          # Fallback: analyze any Java files in the repository
           echo "Trying fallback: analyzing any Java files in repository..."
           fallback_files=($(find . -name "*.java" -type f | head -5))
           if [ ${#fallback_files[@]} -gt 0 ]; then
@@ -209,7 +200,6 @@ jobs:
 
     - name: Ensure results directory exists
       run: |
-        # Ensure results directories exist for comment generation
         mkdir -p before_analysis_results || true
         mkdir -p after_analysis_results || true
         
@@ -232,7 +222,6 @@ jobs:
         echo "After results directory contents:"
         ls -la after_analysis_results/ || echo "After results directory not found"
         
-        # Always try to generate a comment, even if no files were found
         if [ ! -d "before_analysis_results" ]; then
           echo "No before results directory found, creating error comment"
           mkdir -p before_analysis_results
@@ -253,7 +242,6 @@ jobs:
         from pathlib import Path
 
         def load_prediction_data(results_dir):
-            """Load prediction data from results directory"""
             if not os.path.exists(results_dir):
                 return None, None
                 
@@ -282,18 +270,14 @@ jobs:
             before_results_dir = "before_analysis_results"
             after_results_dir = "after_analysis_results"
 
-            # Load before and after data
             before_df, before_summary = load_prediction_data(before_results_dir)
             after_df, after_summary = load_prediction_data(after_results_dir)
 
             comment_lines = [
-                "## � Bug Prediction Analysis",
-                "",
-                "**Analysis completed using REPD Deep Autoencoder (DA) model**",
+                "## Bug Prediction Analysis",
                 ""
             ]
 
-            # Check if we have valid data for comparison
             has_before = before_df is not None and len(before_df) > 0
             has_after = after_df is not None and len(after_df) > 0
 
@@ -313,7 +297,6 @@ jobs:
                     "Only current state analysis is available.",
                     "Files may be newly added in this PR."
                 ])
-                # Fall back to showing only after results
                 return generate_single_state_comment(after_df, after_summary, "Current State")
 
             if not has_after:
@@ -325,124 +308,100 @@ jobs:
                 ])
                 return "\n".join(comment_lines)
 
-            # We have both before and after data - generate comparison
-            comment_lines.extend([
-                f"📊 **Files Analyzed:** {len(after_df)}",
-                f"🤖 **Model Used:** Deep Autoencoder (DA)",
-                ""
-            ])
-
-            # File-by-file comparison with the requested format
-            # Create a mapping of files for comparison
             if 'file_path' in before_df.columns and 'file_path' in after_df.columns:
                 file_col = 'file_path'
             elif 'file_id' in before_df.columns and 'file_id' in after_df.columns:
                 file_col = 'file_id'
             else:
-                # Assume same order if no file identifiers
                 file_col = None
 
             if file_col:
-                # Merge dataframes on file identifier
                 before_df_indexed = before_df.set_index(file_col)
                 after_df_indexed = after_df.set_index(file_col)
                 
-                # Find common files
                 common_files = set(before_df_indexed.index) & set(after_df_indexed.index)
                 
                 if common_files:
                     for file_path in sorted(common_files):
-                        before_prob_defective = before_df_indexed.loc[file_path, 'probability_defective']
-                        after_prob_defective = after_df_indexed.loc[file_path, 'probability_defective']
+                        before_pdf_def = before_df_indexed.loc[file_path, 'pdf_defective']
+                        after_pdf_def = after_df_indexed.loc[file_path, 'pdf_defective']
+                        before_pdf_non = before_df_indexed.loc[file_path, 'pdf_non_defective']
+                        after_pdf_non = after_df_indexed.loc[file_path, 'pdf_non_defective']
                         before_pred = before_df_indexed.loc[file_path, 'prediction']
                         after_pred = after_df_indexed.loc[file_path, 'prediction']
                         
-                        # Calculate probability of non-defective (1 - probability_defective)
-                        before_prob_non_defective = 1.0 - before_prob_defective
-                        after_prob_non_defective = 1.0 - after_prob_defective
-                        
-                        # Calculate percentage changes
-                        if before_prob_defective > 0:
-                            defective_change = ((after_prob_defective - before_prob_defective) / before_prob_defective) * 100
+                        if before_pdf_def > 0:
+                            def_change = ((after_pdf_def - before_pdf_def) / before_pdf_def) * 100
                         else:
-                            defective_change = float('inf') if after_prob_defective > 0 else 0
+                            def_change = float('inf') if after_pdf_def > 0 else 0
                         
-                        if before_prob_non_defective > 0:
-                            non_defective_change = ((after_prob_non_defective - before_prob_non_defective) / before_prob_non_defective) * 100
+                        if before_pdf_non > 0:
+                            non_change = ((after_pdf_non - before_pdf_non) / before_pdf_non) * 100
                         else:
-                            non_defective_change = float('inf') if after_prob_non_defective > 0 else 0
+                            non_change = float('inf') if after_pdf_non > 0 else 0
                         
-                        # Determine outcome change
                         before_status = "Defective" if before_pred == 1 else "Non-Defective"
                         after_status = "Defective" if after_pred == 1 else "Non-Defective"
                         
-                        # Format file name (keep original name format)
                         display_name = file_path
                         
                         comment_lines.extend([
-                            f"**File:** {display_name}",
-                            f"**Outcome:** {before_status} -> {after_status}",
+                            f"File: {display_name}",
+                            f"Outcome: {before_status} -> {after_status}",
                             "",
                             "| Metric | BEFORE PR | AFTER PR | % Change |",
                             "|--------|-----------|----------|----------|"
                         ])
                         
-                        # Format the probability values in scientific notation
-                        before_defective_sci = f"{before_prob_defective:.5e}"
-                        after_defective_sci = f"{after_prob_defective:.5e}"
-                        before_non_defective_sci = f"{before_prob_non_defective:.5e}"
-                        after_non_defective_sci = f"{after_prob_non_defective:.5e}"
+                        before_def_sci = f"{before_pdf_def:.5e}"
+                        after_def_sci = f"{after_pdf_def:.5e}"
+                        before_non_sci = f"{before_pdf_non:.5e}"
+                        after_non_sci = f"{after_pdf_non:.5e}"
                         
-                        # Format percentage changes
-                        if defective_change == float('inf'):
-                            defective_change_str = "+∞%"
-                        elif defective_change == 0:
-                            defective_change_str = "0%"
+                        if def_change == float('inf'):
+                            def_change_str = "+∞%"
+                        elif def_change == 0:
+                            def_change_str = "0%"
                         else:
-                            defective_change_str = f"{defective_change:+.2f}%"
+                            def_change_str = f"{def_change:+.2f}%"
                         
-                        if non_defective_change == float('inf'):
-                            non_defective_change_str = "+∞%"
-                        elif non_defective_change == 0:
-                            non_defective_change_str = "0%"
+                        if non_change == float('inf'):
+                            non_change_str = "+∞%"
+                        elif non_change == 0:
+                            non_change_str = "0%"
                         else:
-                            non_defective_change_str = f"{non_defective_change:+.2f}%"
+                            non_change_str = f"{non_change:+.2f}%"
                         
                         comment_lines.extend([
-                            f"| PDF(Defective \\| Reconstruction Error) | {before_defective_sci} | {after_defective_sci} | {defective_change_str} |",
-                            f"| PDF(Non-Defective \\| Reconstruction Error) | {before_non_defective_sci} | {after_non_defective_sci} | {non_defective_change_str} |",
+                            f"| PDF(Defective \\| Reconstruction Error) | {before_def_sci} | {after_def_sci} | {def_change_str} |",
+                            f"| PDF(Non-Defective \\| Reconstruction Error) | {before_non_sci} | {after_non_sci} | {non_change_str} |",
                             ""
                         ])
                 else:
                     comment_lines.append("No common files found for comparison.")
             else:
-                # Fallback: assume same order and compare by index
                 min_len = min(len(before_df), len(after_df))
                 for i in range(min_len):
-                    before_prob_defective = before_df.iloc[i]['probability_defective']
-                    after_prob_defective = after_df.iloc[i]['probability_defective']
+                    before_pdf_def = before_df.iloc[i]['pdf_defective']
+                    after_pdf_def = after_df.iloc[i]['pdf_defective']
+                    before_pdf_non = before_df.iloc[i]['pdf_non_defective']
+                    after_pdf_non = after_df.iloc[i]['pdf_non_defective']
                     before_pred = before_df.iloc[i]['prediction']
                     after_pred = after_df.iloc[i]['prediction']
                     
-                    # Calculate probability of non-defective
-                    before_prob_non_defective = 1.0 - before_prob_defective
-                    after_prob_non_defective = 1.0 - after_prob_defective
-                    
-                    # Calculate percentage changes
-                    if before_prob_defective > 0:
-                        defective_change = ((after_prob_defective - before_prob_defective) / before_prob_defective) * 100
+                    if before_pdf_def > 0:
+                        def_change = ((after_pdf_def - before_pdf_def) / before_pdf_def) * 100
                     else:
-                        defective_change = float('inf') if after_prob_defective > 0 else 0
+                        def_change = float('inf') if after_pdf_def > 0 else 0
                     
-                    if before_prob_non_defective > 0:
-                        non_defective_change = ((after_prob_non_defective - before_prob_non_defective) / before_prob_non_defective) * 100
+                    if before_pdf_non > 0:
+                        non_change = ((after_pdf_non - before_pdf_non) / before_pdf_non) * 100
                     else:
-                        non_defective_change = float('inf') if after_prob_non_defective > 0 else 0
+                        non_change = float('inf') if after_pdf_non > 0 else 0
                     
                     before_status = "Defective" if before_pred == 1 else "Non-Defective"
                     after_status = "Defective" if after_pred == 1 else "Non-Defective"
                     
-                    # Try to get file name from dataframe if available
                     file_name = "Unknown"
                     if 'file_path' in before_df.columns:
                         file_name = before_df.iloc[i]['file_path']
@@ -452,149 +411,67 @@ jobs:
                         file_name = f"File_{i+1}.java"
                     
                     comment_lines.extend([
-                        f"**File:** {file_name}",
-                        f"**Outcome:** {before_status} -> {after_status}",
+                        f"File: {file_name}",
+                        f"Outcome: {before_status} -> {after_status}",
                         "",
                         "| Metric | BEFORE PR | AFTER PR | % Change |",
                         "|--------|-----------|----------|----------|"
                     ])
                     
-                    # Format the probability values in scientific notation
-                    before_defective_sci = f"{before_prob_defective:.5e}"
-                    after_defective_sci = f"{after_prob_defective:.5e}"
-                    before_non_defective_sci = f"{before_prob_non_defective:.5e}"
-                    after_non_defective_sci = f"{after_prob_non_defective:.5e}"
+                    before_def_sci = f"{before_pdf_def:.5e}"
+                    after_def_sci = f"{after_pdf_def:.5e}"
+                    before_non_sci = f"{before_pdf_non:.5e}"
+                    after_non_sci = f"{after_pdf_non:.5e}"
                     
-                    # Format percentage changes
-                    if defective_change == float('inf'):
-                        defective_change_str = "+∞%"
-                    elif defective_change == 0:
-                        defective_change_str = "0%"
+                    if def_change == float('inf'):
+                        def_change_str = "+∞%"
+                    elif def_change == 0:
+                        def_change_str = "0%"
                     else:
-                        defective_change_str = f"{defective_change:+.2f}%"
+                        def_change_str = f"{def_change:+.2f}%"
                     
-                    if non_defective_change == float('inf'):
-                        non_defective_change_str = "+∞%"
-                    elif non_defective_change == 0:
-                        non_defective_change_str = "0%"
+                    if non_change == float('inf'):
+                        non_change_str = "+∞%"
+                    elif non_change == 0:
+                        non_change_str = "0%"
                     else:
-                        non_defective_change_str = f"{non_defective_change:+.2f}%"
+                        non_change_str = f"{non_change:+.2f}%"
                     
                     comment_lines.extend([
-                        f"| PDF(Defective \\| Reconstruction Error) | {before_defective_sci} | {after_defective_sci} | {defective_change_str} |",
-                        f"| PDF(Non-Defective \\| Reconstruction Error) | {before_non_defective_sci} | {after_non_defective_sci} | {non_defective_change_str} |",
+                        f"| PDF(Defective \\| Reconstruction Error) | {before_def_sci} | {after_def_sci} | {def_change_str} |",
+                        f"| PDF(Non-Defective \\| Reconstruction Error) | {before_non_sci} | {after_non_sci} | {non_change_str} |",
                         ""
                     ])
-
-            # Overall comparison summary
-            before_avg = before_df['probability_defective'].mean()
-            after_avg = after_df['probability_defective'].mean()
-            before_defective_count = (before_df['prediction'] == 1).sum()
-            after_defective_count = (after_df['prediction'] == 1).sum()
-            
-            overall_change = ((after_avg - before_avg) / before_avg) * 100 if before_avg > 0 else 0
-            
-            comment_lines.extend([
-                "### 📊 Overall Impact Summary",
-                "",
-                "| Metric | BEFORE PR | AFTER PR | Change |",
-                "|--------|-----------|----------|--------|",
-                f"| Average Defect Probability | {before_avg:.5e} | {after_avg:.5e} | {overall_change:+.2f}% |",
-                f"| Files Predicted Defective | {before_defective_count}/{len(before_df)} | {after_defective_count}/{len(after_df)} | {after_defective_count - before_defective_count:+d} |",
-                ""
-            ])
-
-            # Assessment
-            comment_lines.extend([
-                "### 📋 Impact Assessment",
-                ""
-            ])
-
-            if after_avg > before_avg:
-                if overall_change > 50:
-                    comment_lines.append("🚨 **SIGNIFICANT INCREASE IN RISK**: This PR substantially increases bug risk.")
-                elif overall_change > 10:
-                    comment_lines.append("⚠️ **MODERATE INCREASE IN RISK**: This PR increases bug risk.")
-                else:
-                    comment_lines.append("🟡 **SLIGHT INCREASE IN RISK**: Minor increase in bug risk detected.")
-            elif after_avg < before_avg:
-                if abs(overall_change) > 50:
-                    comment_lines.append("✅ **SIGNIFICANT IMPROVEMENT**: This PR substantially reduces bug risk.")
-                elif abs(overall_change) > 10:
-                    comment_lines.append("✅ **MODERATE IMPROVEMENT**: This PR reduces bug risk.")
-                else:
-                    comment_lines.append("🟢 **SLIGHT IMPROVEMENT**: Minor reduction in bug risk detected.")
-            else:
-                comment_lines.append("➡️ **NO SIGNIFICANT CHANGE**: Bug risk remains approximately the same.")
-
-            # Recommendations
-            comment_lines.extend([
-                "",
-                "### 💡 Recommendations",
-                ""
-            ])
-
-            if after_avg > before_avg and overall_change > 10:
-                comment_lines.extend([
-                    "🔍 **Increased scrutiny recommended for code review**",
-                    "🧪 **Consider additional testing for modified components**",
-                    "📝 **Review complex changes that may have introduced risk**",
-                    "⚠️ **Pay special attention to files with significant probability increases**"
-                ])
-            elif after_avg < before_avg:
-                comment_lines.extend([
-                    "✅ **Changes appear to improve code quality**",
-                    "📋 **Standard review process should be sufficient**",
-                    "🎯 **Good refactoring or bug fix patterns detected**"
-                ])
-            else:
-                comment_lines.extend([
-                    "📋 **Standard code review process recommended**",
-                    "🔍 **Focus on usual code quality aspects**"
-                ])
-
-            comment_lines.extend([
-                "",
-                "---",
-                "*🤖 Generated by REPD Bug Prediction System*",
-                "*📊 Based on semantic analysis of Java code using trained autoencoders*",
-                "*📈 Before/After comparison shows impact of PR changes*"
-            ])
 
             return "\n".join(comment_lines)
 
         def generate_single_state_comment(df, summary_data, state_name):
-            """Generate comment for single state when comparison isn't available"""
             comment_lines = [
-                f"## 🔍 Java Bug Prediction Analysis - {state_name}",
-                "",
-                "**Analysis completed using REPD Deep Autoencoder (DA) model**",
+                f"## Bug Prediction Analysis - {state_name}",
                 ""
             ]
 
             if df is not None and len(df) > 0:
                 defective_count = (df['prediction'] == 1).sum()
                 defect_rate = (defective_count / len(df)) * 100
-                avg_prob = df['probability_defective'].mean()
+                avg_pdf_def = df['pdf_defective'].mean()
 
                 comment_lines.extend([
                     f"📊 **Files Analyzed:** {len(df)}",
-                    f"🤖 **Model Used:** Deep Autoencoder (DA)",
                     "",
                     "### 🔬 Analysis Results",
                     "",
                     f"- **Predicted Defective:** {defective_count}/{len(df)} files ({defect_rate:.1f}%)",
-                    f"- **Average Defect Probability:** {avg_prob:.4f}",
+                    f"- **Average PDF Defective:** {avg_pdf_def:.4e}",
                     ""
                 ])
 
-                # Top risky files
-                top_risky = df.nlargest(min(3, len(df)), 'probability_defective')
+                top_risky = df.nlargest(min(3, len(df)), 'pdf_defective')
                 if len(top_risky) > 0:
                     comment_lines.extend([
                         "**🚨 Top Risky Files:**",
                         "",
-                        "| File | Defect Probability | Status |",
+                        "| File | PDF Defective | Status |",
                         "|------|-------------------|--------|"
                     ])
 
@@ -603,13 +480,12 @@ jobs:
                         if isinstance(file_name, str) and len(file_name) > 50:
                             file_name = "..." + file_name[-47:]
 
-                        prob = row['probability_defective']
-                        status = "🔴 High Risk" if prob > 0.7 else "🟡 Medium Risk" if prob > 0.3 else "🟢 Low Risk"
-                        comment_lines.append(f"| `{file_name}` | {prob:.4f} | {status} |")
+                        prob = row['pdf_defective']
+                        status = "🔴 High Risk" if prob > 0.00000001 else "🟢 Low Risk"
+                        comment_lines.append(f"| `{file_name}` | {prob:.4e} | {status} |")
 
             return "\n".join(comment_lines)
 
-        # Generate and save comment
         comment_content = generate_comparison_comment()
 
         with open('pr_comment.md', 'w') as f:
@@ -641,12 +517,11 @@ jobs:
           } catch (error) {
             console.error('Error posting comment:', error);
 
-            // Post a fallback comment
             await github.rest.issues.createComment({
               issue_number: context.issue.number,
               owner: context.repo.owner,
               repo: context.repo.repo,
-              body: '## 🔍 Java Bug Prediction Analysis\n\n⚠️ **Analysis encountered an error**\n\nPlease check the workflow logs for details.'
+              body: '## Bug Prediction Analysis\n\n⚠️ **Analysis encountered an error**\n\nPlease check the workflow logs for details.'
             });
           }
 
@@ -670,7 +545,6 @@ jobs:
         import pandas as pd
         from pathlib import Path
 
-        # Check if any files have very high defect probability in the after state
         results_dir = "after_analysis_results"
         high_risk_threshold = 0.8
 
@@ -693,7 +567,6 @@ jobs:
             else:
                 print("No extremely high-risk files detected.")
                 
-            # Also check for significant increases in risk
             before_results_dir = "before_analysis_results"
             if os.path.exists(before_results_dir):
                 before_files = list(Path(before_results_dir).glob("*_DA_predictions.csv"))
@@ -706,7 +579,7 @@ jobs:
                         
                         before_avg = before_df['probability_defective'].mean()
                         after_avg = after_df['probability_defective'].mean()
-                        
+
                         if after_avg > before_avg:
                             change_pct = ((after_avg - before_avg) / before_avg) * 100
                             if change_pct > 50:
