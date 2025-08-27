@@ -205,228 +205,227 @@ jobs:
           echo "Analysis failed - no results generated" > pr_analysis_results/error.txt
         fi
         
-        python << 'EOF'
-        import os
-        import json
-        import pandas as pd
-        from pathlib import Path
+  python << 'EOF'
+  import os
+  import json
+  import pandas as pd
+  from pathlib import Path
 
-        def generate_pr_comment():
-            results_dir = "pr_analysis_results"
+  def generate_pr_comment():
+      results_dir = "pr_analysis_results"
 
-            # Check if analysis was completed
-            if not os.path.exists(results_dir):
-                return "## Java Bug Prediction Analysis\n\n**Analysis could not be completed** - no results directory found."
-            
-            # Check if there was an error indicating no files found
-            error_file = os.path.join(results_dir, "error.txt")
-            if os.path.exists(error_file):
-                with open(error_file, 'r') as f:
-                    error_content = f.read().strip()
-                if "No Java files found to analyze" in error_content:
-                    return "## Java Bug Prediction Analysis\n\n**No Java files found** - no Java files were detected in this PR or repository for analysis."
-                elif "Analysis failed" in error_content:
-                    return "## Java Bug Prediction Analysis\n\n**Analysis failed** - the bug prediction system encountered an error. Please check the workflow logs for details."
+      # Check if analysis was completed
+      if not os.path.exists(results_dir):
+          return "## Java Bug Prediction Analysis\n\n**Analysis could not be completed** - no results directory found."
 
-            # Look for prediction files (DA model only)
-            prediction_files = list(Path(results_dir).glob("*_DA_predictions.csv"))
-            summary_files = list(Path(results_dir).glob("*_prediction_summary.json"))
+      # Look for prediction files (DA model only)
+      prediction_files = list(Path(results_dir).glob("*_DA_predictions.csv"))
+      summary_files = list(Path(results_dir).glob("*_prediction_summary.json"))
 
-            if not prediction_files:
-                return "## Java Bug Prediction Analysis\n\n**No predictions generated** - analysis may have failed."
+      # If no prediction files, check error.txt for specific error messages
+      if not prediction_files:
+          error_file = os.path.join(results_dir, "error.txt")
+          if os.path.exists(error_file):
+              with open(error_file, 'r') as f:
+                  error_content = f.read().strip()
+              if "No Java files found to analyze" in error_content:
+                  return "## Java Bug Prediction Analysis\n\n**No Java files found** - no Java files were detected in this PR or repository for analysis."
+              elif "Analysis failed" in error_content:
+                  return "## Java Bug Prediction Analysis\n\n**Analysis failed** - the bug prediction system encountered an error. Please check the workflow logs for details."
+          return "## Java Bug Prediction Analysis\n\n**No predictions generated** - analysis may have failed."
 
-            comment_lines = [
-                "## Java Bug Prediction Analysis",
-                "",
-            ]
-            
-            # Check if simple predictor was used
-            if os.path.exists(os.path.join(results_dir, "error.txt")):
-                comment_lines.extend([
-                    "**Analysis completed using Simple Heuristic Fallback**",
-                    "",
-                    "*The main REPD pipeline failed, so basic code metrics were used for prediction.*",
-                    ""
-                ])
-            else:
-                comment_lines.extend([
-                    "**Analysis completed using REPD Deep Autoencoder (DA) model**",
-                    ""
-                ])
-            
-            # Add note about what files were analyzed
-            comment_lines.extend([
-                "*Note: Analysis performed on all Java files in the repository.*",
-                ""
-            ])
+      comment_lines = [
+          "## Java Bug Prediction Analysis",
+          "",
+      ]
 
-            # Load summary if available
-            summary_data = {}
-            if summary_files:
-                try:
-                    with open(summary_files[0], 'r') as f:
-                        summary_data = json.load(f)
-                except Exception as e:
-                    print(f"Error loading summary: {e}")
+      # Check if simple predictor was used
+      if os.path.exists(os.path.join(results_dir, "error.txt")):
+          comment_lines.extend([
+              "**Analysis completed using Simple Heuristic Fallback**",
+              "",
+              "*The main REPD pipeline failed, so basic code metrics were used for prediction.*",
+              ""
+          ])
+      else:
+          comment_lines.extend([
+              "**Analysis completed using REPD Deep Autoencoder (DA) model**",
+              ""
+          ])
 
-            # Process each model's predictions
-            model_results = {}
-            for pred_file in prediction_files:
-                try:
-                    df = pd.read_csv(pred_file)
-                    model_type = df['model_type'].iloc[0] if 'model_type' in df.columns else 'Unknown'
-                    model_results[model_type] = df
-                except Exception as e:
-                    print(f"Error loading predictions from {pred_file}: {e}")
+      # Add note about what files were analyzed
+      comment_lines.extend([
+          "*Note: Analysis performed on all Java files in the repository.*",
+          ""
+      ])
 
-            if model_results:
-                # Summary statistics
-                total_files = len(list(model_results.values())[0]) if model_results else 0
-                comment_lines.extend([
-                    f"**Files Analyzed:** {total_files}",
-                ])
-                
-                # Check if simple predictor was used
-                if os.path.exists(os.path.join(results_dir, "error.txt")):
-                    comment_lines.extend([
-                        f"**Model Used:** Simple Heuristic Fallback",
-                        ""
-                    ])
-                else:
-                    comment_lines.extend([
-                        f"**Model Used:** Deep Autoencoder (DA)",
-                        ""
-                    ])
+      # Load summary if available
+      summary_data = {}
+      if summary_files:
+          try:
+              with open(summary_files[0], 'r') as f:
+                  summary_data = json.load(f)
+          except Exception as e:
+              print(f"Error loading summary: {e}")
 
-                # Results for DA model
-                if 'DA' in model_results:
-                    df = model_results['DA']
-                    defective_count = (df['prediction'] == 1).sum()
-                    defect_rate = (defective_count / len(df)) * 100 if len(df) > 0 else 0
-                    avg_prob = df['probability_defective'].mean()
+      # Process each model's predictions
+      model_results = {}
+      for pred_file in prediction_files:
+          try:
+              df = pd.read_csv(pred_file)
+              model_type = df['model_type'].iloc[0] if 'model_type' in df.columns else 'Unknown'
+              model_results[model_type] = df
+          except Exception as e:
+              print(f"Error loading predictions from {pred_file}: {e}")
 
-                    # Check if simple predictor was used
-                    if os.path.exists(os.path.join(results_dir, "error.txt")):
-                        model_name = "Simple Heuristic Fallback"
-                    else:
-                        model_name = "Deep Autoencoder (DA) Model"
+      if model_results:
+          # Summary statistics
+          total_files = len(list(model_results.values())[0]) if model_results else 0
+          comment_lines.extend([
+              f"**Files Analyzed:** {total_files}",
+          ])
 
-                    comment_lines.extend([
-                        f"### **Results**",
-                        "",
-                        f"- **Predicted Defective:** {defective_count}/{len(df)} files ({defect_rate:.1f}%)",
-                        f"- **Average Defect Probability:** {avg_prob:.4f}",
-                        ""
-                    ])
+          # Check if simple predictor was used
+          if os.path.exists(os.path.join(results_dir, "error.txt")):
+              comment_lines.extend([
+                  f"**Model Used:** Simple Heuristic Fallback",
+                  ""
+              ])
+          else:
+              comment_lines.extend([
+                  f"**Model Used:** Deep Autoencoder (DA)",
+                  ""
+              ])
 
-                    # Top risky files
-                    if len(df) > 0:
-                        top_risky = df.nlargest(min(3, len(df)), 'probability_defective')
-                        if len(top_risky) > 0:
-                            comment_lines.extend([
-                                "**Top Risky Files:**",
-                                "",
-                                "| File | Defect Probability | Status |",
-                                "|------|-------------------|--------|"
-                            ])
+          # Results for DA model
+          if 'DA' in model_results:
+              df = model_results['DA']
+              defective_count = (df['prediction'] == 1).sum()
+              defect_rate = (defective_count / len(df)) * 100 if len(df) > 0 else 0
+              avg_prob = df['probability_defective'].mean()
 
-                            for _, row in top_risky.iterrows():
-                                file_name = row.get('file_path', row.get('file_id', 'Unknown'))
-                                if isinstance(file_name, str):
-                                    # Truncate long file paths
-                                    if len(file_name) > 50:
-                                        file_name = "..." + file_name[-47:]
+              # Check if simple predictor was used
+              if os.path.exists(os.path.join(results_dir, "error.txt")):
+                  model_name = "Simple Heuristic Fallback"
+              else:
+                  model_name = "Deep Autoencoder (DA) Model"
 
-                                prob = row['probability_defective']
-                                status = "High Risk" if prob > 0.7 else "Medium Risk" if prob > 0.3 else "Low Risk"
+              comment_lines.extend([
+                  f"### **Results**",
+                  "",
+                  f"- **Predicted Defective:** {defective_count}/{len(df)} files ({defect_rate:.1f}%)",
+                  f"- **Average Defect Probability:** {avg_prob:.4f}",
+                  ""
+              ])
 
-                                comment_lines.append(f"| `{file_name}` | {prob:.4f} | {status} |")
+              # Top risky files
+              if len(df) > 0:
+                  top_risky = df.nlargest(min(3, len(df)), 'probability_defective')
+                  if len(top_risky) > 0:
+                      comment_lines.extend([
+                          "**Top Risky Files:**",
+                          "",
+                          "| File | Defect Probability | Status |",
+                          "|------|-------------------|--------|"
+                      ])
 
-                            comment_lines.append("")
+                      for _, row in top_risky.iterrows():
+                          file_name = row.get('file_path', row.get('file_id', 'Unknown'))
+                          if isinstance(file_name, str):
+                              # Truncate long file paths
+                              if len(file_name) > 50:
+                                  file_name = "..." + file_name[-47:]
 
-                # Overall assessment (DA model only)
-                all_probs = []
-                all_predictions = []
-                if 'DA' in model_results:
-                    df = model_results['DA']
-                    all_probs.extend(df['probability_defective'].tolist())
-                    all_predictions.extend(df['prediction'].tolist())
+                          prob = row['probability_defective']
+                          status = "High Risk" if prob > 0.7 else "Medium Risk" if prob > 0.3 else "Low Risk"
 
-                if all_probs:
-                    avg_overall_prob = sum(all_probs) / len(all_probs)
-                    high_risk_count = sum(1 for p in all_probs if p > 0.7)
+                          comment_lines.append(f"| `{file_name}` | {prob:.4f} | {status} |")
 
-                    comment_lines.extend([
-                        "### Overall Assessment",
-                        ""
-                    ])
+                      comment_lines.append("")
 
-                    if avg_overall_prob > 0.6:
-                        comment_lines.append("**HIGH RISK**: This PR contains files with elevated bug risk.")
-                    elif avg_overall_prob > 0.3:
-                        comment_lines.append("**MEDIUM RISK**: Some files in this PR may need closer review.")
-                    else:
-                        comment_lines.append("**LOW RISK**: Files in this PR appear to have low bug risk.")
+          # Overall assessment (DA model only)
+          all_probs = []
+          all_predictions = []
+          if 'DA' in model_results:
+              df = model_results['DA']
+              all_probs.extend(df['probability_defective'].tolist())
+              all_predictions.extend(df['prediction'].tolist())
 
-                    comment_lines.extend([
-                        "",
-                        f"- Average defect probability across all models: {avg_overall_prob:.4f}",
-                        f"- Files with high risk (>0.7): {high_risk_count}",
-                        ""
-                    ])
+          if all_probs:
+              avg_overall_prob = sum(all_probs) / len(all_probs)
+              high_risk_count = sum(1 for p in all_probs if p > 0.7)
 
-                # Recommendations
-                comment_lines.extend([
-                    "### Recommendations",
-                    ""
-                ])
+              comment_lines.extend([
+                  "### Overall Assessment",
+                  ""
+              ])
 
-                high_risk_files = []
-                if 'DA' in model_results:
-                    df = model_results['DA']
-                    high_risk = df[df['probability_defective'] > 0.7]
-                    if len(high_risk) > 0:
-                        high_risk_files.extend(high_risk['file_path'].tolist() if 'file_path' in high_risk.columns else high_risk['file_id'].tolist())
+              if avg_overall_prob > 0.6:
+                  comment_lines.append("**HIGH RISK**: This PR contains files with elevated bug risk.")
+              elif avg_overall_prob > 0.3:
+                  comment_lines.append("**MEDIUM RISK**: Some files in this PR may need closer review.")
+              else:
+                  comment_lines.append("**LOW RISK**: Files in this PR appear to have low bug risk.")
 
-                if high_risk_files:
-                    comment_lines.extend([
-                        "**Focus code review on high-risk files**",
-                        "**Consider additional testing for flagged components**",
-                        "**Run extra validation on complex methods**"
-                    ])
-                else:
-                    comment_lines.extend([
-                        "**Standard code review process should be sufficient**",
-                        "**Continue with normal testing procedures**"
-                    ])
+              comment_lines.extend([
+                  "",
+                  f"- Average defect probability across all models: {avg_overall_prob:.4f}",
+                  f"- Files with high risk (>0.7): {high_risk_count}",
+                  ""
+              ])
 
-            else:
-                comment_lines.extend([
-                    "**No model results available**",
-                    "",
-                    "The analysis completed but no prediction data was generated.",
-                    "This may indicate an issue with the feature extraction process."
-                ])
+          # Recommendations
+          comment_lines.extend([
+              "### Recommendations",
+              ""
+          ])
 
-            comment_lines.extend([
-                "",
-                "---",
-                "*Generated by REPD Bug Prediction System*",
-                "*Based on semantic analysis of Java code using trained autoencoders*"
-            ])
+          high_risk_files = []
+          if 'DA' in model_results:
+              df = model_results['DA']
+              high_risk = df[df['probability_defective'] > 0.7]
+              if len(high_risk) > 0:
+                  high_risk_files.extend(high_risk['file_path'].tolist() if 'file_path' in high_risk.columns else high_risk['file_id'].tolist())
 
-            return "\n".join(comment_lines)
+          if high_risk_files:
+              comment_lines.extend([
+                  "**Focus code review on high-risk files**",
+                  "**Consider additional testing for flagged components**",
+                  "**Run extra validation on complex methods**"
+              ])
+          else:
+              comment_lines.extend([
+                  "**Standard code review process should be sufficient**",
+                  "**Continue with normal testing procedures**"
+              ])
 
-        # Generate and save comment
-        comment_content = generate_pr_comment()
+      else:
+          comment_lines.extend([
+              "**No model results available**",
+              "",
+              "The analysis completed but no prediction data was generated.",
+              "This may indicate an issue with the feature extraction process."
+          ])
 
-        with open('pr_comment.md', 'w') as f:
-            f.write(comment_content)
+      comment_lines.extend([
+          "",
+          "---",
+          "*Generated by REPD Bug Prediction System*",
+          "*Based on semantic analysis of Java code using trained autoencoders*"
+      ])
 
-        print("Generated PR comment:")
-        print("=" * 50)
-        print(comment_content)
-        EOF
+      return "\n".join(comment_lines)
+
+  # Generate and save comment
+  comment_content = generate_pr_comment()
+
+  with open('pr_comment.md', 'w') as f:
+      f.write(comment_content)
+
+  print("Generated PR comment:")
+  print("=" * 50)
+  print(comment_content)
+  EOF
 
     - name: Post comment to PR
       uses: actions/github-script@v7

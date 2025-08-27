@@ -412,6 +412,10 @@ public class RandomTest1 {
     public static class CustomStaticClass { public static int customStaticMethod(int x) { return x+1; } 
     }
 
-    public static class CustomStaticClasss { public static int customStaticMethod(int x) { return x+1; } }
+    public static class CustomStaticClasss { public static int customStaticMethod(int x) { return x+1; } 
+    }
+
+    public static class CustomStaticClasssu { public static int customStaticMethod(int x) { return x+1; } 
+}
 
 }
