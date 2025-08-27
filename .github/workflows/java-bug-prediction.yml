@@ -210,36 +210,36 @@ jobs:
         def generate_pr_comment():
             results_dir = "pr_analysis_results"
 
-                  # Check if analysis was completed
-      if not os.path.exists(results_dir):
-          return "## 🔍 Java Bug Prediction Analysis\n\n⚠️ **Analysis could not be completed** - no results directory found."
-      
-      # Check if there was an error indicating no files found
-      error_file = os.path.join(results_dir, "error.txt")
-      if os.path.exists(error_file):
-          with open(error_file, 'r') as f:
-              error_content = f.read().strip()
-          if "No Java files found to analyze" in error_content:
-              return "## 🔍 Java Bug Prediction Analysis\n\n⚠️ **No Java files found** - no Java files were detected in this PR for analysis."
-          elif "Analysis failed" in error_content:
-              return "## 🔍 Java Bug Prediction Analysis\n\n⚠️ **Analysis failed** - the bug prediction system encountered an error. Please check the workflow logs for details."
+            # Check if analysis was completed
+            if not os.path.exists(results_dir):
+                return "## Java Bug Prediction Analysis\n\n**Analysis could not be completed** - no results directory found."
+            
+            # Check if there was an error indicating no files found
+            error_file = os.path.join(results_dir, "error.txt")
+            if os.path.exists(error_file):
+                with open(error_file, 'r') as f:
+                    error_content = f.read().strip()
+                if "No Java files found to analyze" in error_content:
+                    return "## Java Bug Prediction Analysis\n\n**No Java files found** - no Java files were detected in this PR for analysis."
+                elif "Analysis failed" in error_content:
+                    return "## Java Bug Prediction Analysis\n\n**Analysis failed** - the bug prediction system encountered an error. Please check the workflow logs for details."
 
             # Look for prediction files (DA model only)
             prediction_files = list(Path(results_dir).glob("*_DA_predictions.csv"))
             summary_files = list(Path(results_dir).glob("*_prediction_summary.json"))
 
             if not prediction_files:
-                return "## 🔍 Java Bug Prediction Analysis\n\n⚠️ **No predictions generated** - analysis may have failed."
+                return "## Java Bug Prediction Analysis\n\n**No predictions generated** - analysis may have failed."
 
             comment_lines = [
-                "## 🔍 Java Bug Prediction Analysis",
+                "## Java Bug Prediction Analysis",
                 "",
             ]
             
             # Check if simple predictor was used
             if os.path.exists(os.path.join(results_dir, "error.txt")):
                 comment_lines.extend([
-                    "⚠️ **Analysis completed using Simple Heuristic Fallback**",
+                    "**Analysis completed using Simple Heuristic Fallback**",
                     "",
                     "*The main REPD pipeline failed, so basic code metrics were used for prediction.*",
                     ""
@@ -273,18 +273,18 @@ jobs:
                 # Summary statistics
                 total_files = len(list(model_results.values())[0]) if model_results else 0
                 comment_lines.extend([
-                    f"📊 **Files Analyzed:** {total_files}",
+                    f"**Files Analyzed:** {total_files}",
                 ])
                 
                 # Check if simple predictor was used
                 if os.path.exists(os.path.join(results_dir, "error.txt")):
                     comment_lines.extend([
-                        f"🤖 **Model Used:** Simple Heuristic Fallback",
+                        f"**Model Used:** Simple Heuristic Fallback",
                         ""
                     ])
                 else:
                     comment_lines.extend([
-                        f"🤖 **Model Used:** Deep Autoencoder (DA)",
+                        f"**Model Used:** Deep Autoencoder (DA)",
                         ""
                     ])
 
@@ -302,7 +302,7 @@ jobs:
                         model_name = "Deep Autoencoder (DA) Model"
 
                     comment_lines.extend([
-                        f"### 🔬 {model_name} Results",
+                        f"### **Results**",
                         "",
                         f"- **Predicted Defective:** {defective_count}/{len(df)} files ({defect_rate:.1f}%)",
                         f"- **Average Defect Probability:** {avg_prob:.4f}",
@@ -314,7 +314,7 @@ jobs:
                         top_risky = df.nlargest(min(3, len(df)), 'probability_defective')
                         if len(top_risky) > 0:
                             comment_lines.extend([
-                                "**🚨 Top Risky Files:**",
+                                "**Top Risky Files:**",
                                 "",
                                 "| File | Defect Probability | Status |",
                                 "|------|-------------------|--------|"
@@ -328,7 +328,7 @@ jobs:
                                         file_name = "..." + file_name[-47:]
 
                                 prob = row['probability_defective']
-                                status = "🔴 High Risk" if prob > 0.7 else "🟡 Medium Risk" if prob > 0.3 else "🟢 Low Risk"
+                                status = "High Risk" if prob > 0.7 else "Medium Risk" if prob > 0.3 else "Low Risk"
 
                                 comment_lines.append(f"| `{file_name}` | {prob:.4f} | {status} |")
 
@@ -347,16 +347,16 @@ jobs:
                     high_risk_count = sum(1 for p in all_probs if p > 0.7)
 
                     comment_lines.extend([
-                        "### 📋 Overall Assessment",
+                        "### Overall Assessment",
                         ""
                     ])
 
                     if avg_overall_prob > 0.6:
-                        comment_lines.append("🚨 **HIGH RISK**: This PR contains files with elevated bug risk.")
+                        comment_lines.append("**HIGH RISK**: This PR contains files with elevated bug risk.")
                     elif avg_overall_prob > 0.3:
-                        comment_lines.append("🟡 **MEDIUM RISK**: Some files in this PR may need closer review.")
+                        comment_lines.append("**MEDIUM RISK**: Some files in this PR may need closer review.")
                     else:
-                        comment_lines.append("✅ **LOW RISK**: Files in this PR appear to have low bug risk.")
+                        comment_lines.append("**LOW RISK**: Files in this PR appear to have low bug risk.")
 
                     comment_lines.extend([
                         "",
@@ -367,7 +367,7 @@ jobs:
 
                 # Recommendations
                 comment_lines.extend([
-                    "### 💡 Recommendations",
+                    "### Recommendations",
                     ""
                 ])
 
@@ -380,19 +380,19 @@ jobs:
 
                 if high_risk_files:
                     comment_lines.extend([
-                        "🔍 **Focus code review on high-risk files**",
-                        "📝 **Consider additional testing for flagged components**",
-                        "🧪 **Run extra validation on complex methods**"
+                        "**Focus code review on high-risk files**",
+                        "**Consider additional testing for flagged components**",
+                        "**Run extra validation on complex methods**"
                     ])
                 else:
                     comment_lines.extend([
-                        "✅ **Standard code review process should be sufficient**",
-                        "📋 **Continue with normal testing procedures**"
+                        "**Standard code review process should be sufficient**",
+                        "**Continue with normal testing procedures**"
                     ])
 
             else:
                 comment_lines.extend([
-                    "⚠️ **No model results available**",
+                    "**No model results available**",
                     "",
                     "The analysis completed but no prediction data was generated.",
                     "This may indicate an issue with the feature extraction process."
@@ -401,8 +401,8 @@ jobs:
             comment_lines.extend([
                 "",
                 "---",
-                "*🤖 Generated by REPD Bug Prediction System*",
-                "*📊 Based on semantic analysis of Java code using trained autoencoders*"
+                "*Generated by REPD Bug Prediction System*",
+                "*Based on semantic analysis of Java code using trained autoencoders*"
             ])
 
             return "\n".join(comment_lines)
@@ -443,7 +443,7 @@ jobs:
               issue_number: context.issue.number,
               owner: context.repo.owner,
               repo: context.repo.repo,
-              body: '## 🔍 Java Bug Prediction Analysis\n\n⚠️ **Analysis encountered an error**\n\nPlease check the workflow logs for details.'
+              body: '## Java Bug Prediction Analysis\n\n**Analysis encountered an error**\n\nPlease check the workflow logs for details.'
             });
           }
 

@@ -413,6 +413,6 @@ public class RandomTest2 {
 
     // Example custom static class
     public static class CustomStaticClass { public static int customStaticMethod(int x) { return x+1; } 
-}
+   }
 
 }
