@@ -7,7 +7,6 @@ from keras.layers import Input, Dense, Convolution1D, MaxPooling1D, UpSampling1D
 from keras.models import Model
 from keras import backend as K
 from keras.models import load_model
-from dbn import *
 
 class Extractor(ABC):
     """
