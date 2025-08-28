@@ -156,6 +156,13 @@ class JavaFeatureExtractor:
                 logger.warning(f"Failed to extract AST vector from {java_file}: {e}")
                 
         logger.info(f"Extracted {len(vectors)} AST vectors")
+        
+        # Fallback: if no vectors extracted, try simple lexical tokenization
+        if len(vectors) == 0:
+            logger.info("AST extraction yielded no vectors; using fallback lexical tokenization")
+            vectors = self._extract_fallback_vectors(java_files)
+            logger.info(f"Fallback produced {len(vectors)} token vectors")
+        
         return vectors
     
     def _extract_single_ast_vector(self, java_file: str) -> Optional[List[int]]:
@@ -235,6 +242,28 @@ class JavaFeatureExtractor:
             logger.error(f"DA feature extraction failed: {e}")
         
         return features
+
+    def _extract_fallback_vectors(self, java_files: List[str]) -> List[List[int]]:
+        """
+        Fallback vectorization: simple lexical token hashing to integer ids and counts.
+        Generates fixed-length bag-of-token vectors so downstream feature extractor can run.
+        """
+        import re
+        vectors: List[List[int]] = []
+        vocab_size = 1024  # modest size to keep vectors reasonable
+        for path in java_files:
+            try:
+                with open(path, 'r', errors='ignore') as f:
+                    text = f.read()
+                tokens = re.findall(r"[A-Za-z_][A-Za-z_0-9]*", text)
+                counts = np.zeros(vocab_size, dtype=int)
+                for tok in tokens:
+                    idx = (hash(tok) % vocab_size)
+                    counts[idx] += 1
+                vectors.append(counts.tolist())
+            except Exception as e:
+                logger.warning(f"Fallback tokenization failed for {path}: {e}")
+        return vectors
     
     def _load_existing_features(self) -> Optional[Dict[str, np.ndarray]]:
         """
