@@ -221,25 +221,18 @@ class JavaFeatureExtractor:
             logger.warning("No AST vectors available for feature extraction")
             return {}
         
-        # Import extractors
-        import sys
-        sys.path.append('semantic-dataset-creation')
-        from extractor import DeepAutoencoder
-        
         # Prepare data (pad to same length)
         prepared_data = self._prepare_data(ast_vectors)
         
         features = {}
         
         try:
-            # Deep Autoencoder features only
-            logger.info("Extracting DA features")
-            da_extractor = DeepAutoencoder()
-            da_features = da_extractor.get_features(prepared_data, None)
-            features['DA'] = np.array([x.flatten() for x in da_features])
+            # Use prepared token vectors directly as DA features to stay TF/Keras-agnostic
+            logger.info("Using prepared token vectors as DA features (no keras dependency)")
+            features['DA'] = prepared_data.astype(float)
             
         except Exception as e:
-            logger.error(f"DA feature extraction failed: {e}")
+            logger.error(f"DA feature preparation failed: {e}")
         
         return features
 
