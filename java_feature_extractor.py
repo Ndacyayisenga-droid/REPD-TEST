@@ -80,26 +80,28 @@ class JavaFeatureExtractor:
             if self.temp_dir and os.path.exists(self.temp_dir):
                 shutil.rmtree(self.temp_dir)
                 
-    def extract_features_from_files(self, java_files: List[str]) -> Dict[str, np.ndarray]:
+    def extract_features_from_files(self, java_files: List[str], use_existing: bool = True) -> Dict[str, np.ndarray]:
         """
         Extract features from a list of Java files.
         
         Args:
             java_files: List of paths to Java files
+            use_existing: If True, attempt to load preprocessed features; if False, force AST extraction
             
         Returns:
             Dictionary containing extracted features for each feature type
         """
         logger.info(f"Extracting features from {len(java_files)} Java files")
         
-        # Try to use existing features first
-        existing_features = self._load_existing_features()
-        if existing_features:
-            logger.info("Using existing pre-processed features")
-            return existing_features
+        # Try to use existing features first (only if explicitly allowed)
+        if use_existing:
+            existing_features = self._load_existing_features()
+            if existing_features:
+                logger.info("Using existing pre-processed features")
+                return existing_features
         
-        # Fallback to AST extraction if no existing features
-        logger.info("No existing features found, attempting AST extraction")
+        # Fallback to AST extraction if no existing features or not allowed
+        logger.info("Generating features via AST extraction for provided files")
         ast_vectors = self._extract_ast_vectors(java_files)
         
         # Generate semantic features

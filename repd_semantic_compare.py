@@ -61,8 +61,8 @@ def train_repd_author_impl() -> REPD:
 def evaluate_files(repd: REPD, java_files, output_dir: str):
     os.makedirs(output_dir, exist_ok=True)
     extractor = JavaFeatureExtractor()
-    # Extract DA features using our extractor (returns dict)
-    features = extractor.extract_features_from_files(java_files)
+    # Extract DA features using our extractor (returns dict). Force AST extraction for provided files.
+    features = extractor.extract_features_from_files(java_files, use_existing=False)
     if 'DA' not in features or features['DA'] is None or len(features['DA']) == 0:
         # Write error
         with open(os.path.join(output_dir, 'error.txt'), 'w') as f:

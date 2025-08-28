@@ -130,6 +130,10 @@ jobs:
           
           echo "Changed Java files:"
           printf "%s\n" "$changed_files"
+
+          echo "Debug: listing repo structure"
+          find target_repo -maxdepth 2 -type d -print
+          ls -la
           
           # Create analysis directories
           mkdir -p analysis_base
