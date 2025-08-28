@@ -215,7 +215,7 @@ jobs:
                   print(f"Error loading predictions from {results_dir}: {e}")
                   return None
 
-          def format_comparison_results(base_df, head_df, file_names):
+          def format_detailed_comparison_results(base_df, head_df, file_names):
               if base_df is None or head_df is None:
                   return "Unable to load prediction data for comparison."
               
@@ -236,43 +236,75 @@ jobs:
                   return "No common files found for comparison."
               
               lines = [
-                  "### 📊 Before/After Comparison",
-                  "",
-                  "| File | Before (Defect Prob) | After (Defect Prob) | Change | Status Change |",
-                  "|------|---------------------|-------------------|--------|---------------|"
+                  "### Bug Prediction Analysis",
+                  ""
               ]
               
               for file_path in sorted(common_files):
                   try:
-                      before_prob = base_df_indexed.loc[file_path, 'probability_defective']
-                      after_prob = head_df_indexed.loc[file_path, 'probability_defective']
+                      # Extract file name for display
+                      display_name = os.path.basename(file_path)
+                      if len(display_name) > 50:
+                          display_name = "..." + display_name[-47:]
+                      
+                      # Get prediction values
+                      before_prob_defective = base_df_indexed.loc[file_path, 'probability_defective']
+                      after_prob_defective = head_df_indexed.loc[file_path, 'probability_defective']
+                      before_prob_non_defective = 1.0 - before_prob_defective
+                      after_prob_non_defective = 1.0 - after_prob_defective
+                      
+                      # Get predictions
                       before_pred = base_df_indexed.loc[file_path, 'prediction']
                       after_pred = head_df_indexed.loc[file_path, 'prediction']
                       
-                      # Calculate change
-                      if before_prob > 0:
-                          change_pct = ((after_prob - before_prob) / before_prob) * 100
-                          if change_pct > 0:
-                              change_str = f"+{change_pct:.1f}%"
+                      # Get reconstruction error if available
+                      before_reconstruction_error = base_df_indexed.loc[file_path, 'reconstruction_error'] if 'reconstruction_error' in base_df_indexed.columns else 0.0
+                      after_reconstruction_error = head_df_indexed.loc[file_path, 'reconstruction_error'] if 'reconstruction_error' in head_df_indexed.columns else 0.0
+                      
+                      # Determine outcome
+                      before_status = "Defective" if before_pred == 1 else "Non-Defective"
+                      after_status = "Defective" if after_pred == 1 else "Non-Defective"
+                      outcome = f"{before_status} -> {after_status}"
+                      
+                      # Calculate percentage changes
+                      if before_prob_defective > 0:
+                          def_change = ((after_prob_defective - before_prob_defective) / before_prob_defective) * 100
+                          def_change_str = f"{def_change:+.2f}%" if def_change != 0 else "0%"
+                      else:
+                          def_change_str = "N/A"
+                      
+                      if before_prob_non_defective > 0:
+                          non_def_change = ((after_prob_non_defective - before_prob_non_defective) / before_prob_non_defective) * 100
+                          non_def_change_str = f"{non_def_change:+.2f}%" if non_def_change != 0 else "0%"
+                      else:
+                          non_def_change_str = "N/A"
+                      
+                      # Add file header
+                      lines.extend([
+                          f"**File:** `{display_name}`",
+                          f"**Outcome:** `{outcome}`",
+                          "",
+                          "| Metric | BEFORE PR | AFTER PR | % Change |",
+                          "|--------|-----------|----------|----------|"
+                      ])
+                      
+                      # Add reconstruction error row
+                      if before_reconstruction_error != 0.0 or after_reconstruction_error != 0.0:
+                          if before_reconstruction_error > 0:
+                              re_change = ((after_reconstruction_error - before_reconstruction_error) / before_reconstruction_error) * 100
+                              re_change_str = f"{re_change:+.2f}%" if re_change != 0 else "0%"
                           else:
-                              change_str = f"{change_pct:.1f}%"
-                      else:
-                          change_str = "N/A"
+                              re_change_str = "N/A"
+                          
+                          lines.append(f"| Reconstruction Error | {before_reconstruction_error:.6e} | {after_reconstruction_error:.6e} | {re_change_str} |")
                       
-                      # Status change
-                      if before_pred == after_pred:
-                          status_change = "No change"
-                      elif after_pred == 1:
-                          status_change = "🔴 → Defective"
-                      else:
-                          status_change = "🟢 → Non-defective"
+                      # Add probability density rows (similar to GlitchWitcher format)
+                      lines.extend([
+                          f"| PDF(Defective \\| Reconstruction Error) | {before_prob_defective:.6e} | {after_prob_defective:.6e} | {def_change_str} |",
+                          f"| PDF(Non-Defective \\| Reconstruction Error) | {before_prob_non_defective:.6e} | {after_prob_non_defective:.6e} | {non_def_change_str} |"
+                      ])
                       
-                      # Truncate file name if too long
-                      display_name = os.path.basename(file_path)
-                      if len(display_name) > 30:
-                          display_name = "..." + display_name[-27:]
-                      
-                      lines.append(f"| `{display_name}` | {before_prob:.4f} | {after_prob:.4f} | {change_str} | {status_change} |")
+                      lines.append("")
                       
                   except Exception as e:
                       print(f"Error processing file {file_path}: {e}")
@@ -295,8 +327,8 @@ jobs:
               with open("changed_files.txt", "r") as f:
                   file_names = [line.strip() for line in f if line.strip()]
           
-          # Generate comparison
-          comparison_result = format_comparison_results(base_df, head_df, file_names)
+          # Generate detailed comparison
+          comparison_result = format_detailed_comparison_results(base_df, head_df, file_names)
           print(comparison_result)
           EOF
           
@@ -312,8 +344,8 @@ jobs:
               echo "comment<<EOF"
               echo "$comparison_result"
               echo ""
-              echo "### 📋 Analysis Summary:"
-              echo "> This analysis compares the bug prediction probabilities for Java files before and after the changes in this PR. Higher defect probabilities indicate increased risk of bugs."
+              echo "### 📋 Interpretation Note:"
+              echo "> The values shown are Probability Densities (PDFs), not probabilities. They represent the model's assessment of how likely a file's characteristics are to be 'defective' vs. 'non-defective' based on semantic analysis using Deep Autoencoder reconstruction errors. A higher value indicates a better fit for that category. Very small values are expected and normal for semantic models."
               echo ""
               echo "EOF"
             } >> $GITHUB_OUTPUT
