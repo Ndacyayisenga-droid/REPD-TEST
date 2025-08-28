@@ -9,6 +9,8 @@ Created on Thu Apr 19 14:06:01 2018
 import os
 #
 import tensorflow as tf
+# Enable TF1-style graph mode under TF2
+tf.compat.v1.disable_eager_execution()
 import math
 #
 from general_utility import canTFUseGPU
@@ -29,7 +31,7 @@ class AutoEncoder:
             self.batch_size = batch_size
      
             #      
-            self.x = tf.placeholder("float", [None, self.layers[0]])
+            self.x = tf.compat.v1.placeholder("float", [None, self.layers[0]])
             #
             self.W = []
             #
@@ -77,10 +79,10 @@ class AutoEncoder:
             
             # Objective functions
             self.meansq = tf.reduce_mean(error_func(self.x-self.g[0]))
-            self.train_step = tf.train.AdamOptimizer(self.lr).minimize(self.meansq)
+            self.train_step = tf.compat.v1.train.AdamOptimizer(self.lr).minimize(self.meansq)
             
             #Decoder only
-            self.y = tf.placeholder("float", [None, self.layers[-1]])
+            self.y = tf.compat.v1.placeholder("float", [None, self.layers[-1]])
             self.decoder_input = self.h[-1]
             
     
@@ -98,8 +100,8 @@ class AutoEncoder:
                 self.d.append(di)
             self.d = list(reversed(self.d))
             
-            self.sess = tf.Session()
-            init = tf.global_variables_initializer()
+            self.sess = tf.compat.v1.Session()
+            init = tf.compat.v1.global_variables_initializer()
             self.sess.run(init)
         
         
@@ -129,7 +131,7 @@ class AutoEncoder:
         self.transform(X)
         
     def close(self):
-        tf.reset_default_graph()
+        tf.compat.v1.reset_default_graph()
         self.sess.close()
         
     def debugPrint(self):
