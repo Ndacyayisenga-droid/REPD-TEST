@@ -45,7 +45,7 @@ class AutoEncoder:
             
             for i in range(len(self.layers)-1):
                 limit = 1.0 / math.sqrt(self.layers[i])
-                Wi = tf.Variable(tf.random_uniform((self.layers[i], self.layers[i+1]), -limit, limit))
+                Wi = tf.Variable(tf.compat.v1.random_uniform((self.layers[i], self.layers[i+1]), -limit, limit))
                 self.W.append(Wi)
                 #
                 bi = tf.Variable(tf.zeros([self.layers[i+1]]))
