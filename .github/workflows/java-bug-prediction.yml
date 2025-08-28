@@ -150,13 +150,10 @@ jobs:
           
           if [ ${#base_files[@]} -gt 0 ]; then
             echo "Analyzing ${#base_files[@]} files in base commit..."
-            python3 bug_prediction_pipeline.py --files "${base_files[@]}" --output analysis_base --report || {
-              echo "Base analysis failed, trying simple predictor..."
-              python3 simple_bug_predictor.py --files "${base_files[@]}" --output analysis_base || {
-                echo "Base analysis completely failed"
-                mkdir -p analysis_base
-                echo "Base analysis failed" > analysis_base/error.txt
-              }
+            python3 repd_semantic_compare.py --files "${base_files[@]}" --output analysis_base --state base || {
+              echo "Base analysis failed"
+              mkdir -p analysis_base
+              echo "Base analysis failed" > analysis_base/error.txt
             }
           else
             echo "No files to analyze in base commit"
@@ -179,13 +176,10 @@ jobs:
           
           if [ ${#head_files[@]} -gt 0 ]; then
             echo "Analyzing ${#head_files[@]} files in head commit..."
-            python3 bug_prediction_pipeline.py --files "${head_files[@]}" --output analysis_head --report || {
-              echo "Head analysis failed, trying simple predictor..."
-              python3 simple_bug_predictor.py --files "${head_files[@]}" --output analysis_head || {
-                echo "Head analysis completely failed"
-                mkdir -p analysis_head
-                echo "Head analysis failed" > analysis_head/error.txt
-              }
+            python3 repd_semantic_compare.py --files "${head_files[@]}" --output analysis_head --state head || {
+              echo "Head analysis failed"
+              mkdir -p analysis_head
+              echo "Head analysis failed" > analysis_head/error.txt
             }
           else
             echo "No files to analyze in head commit"
