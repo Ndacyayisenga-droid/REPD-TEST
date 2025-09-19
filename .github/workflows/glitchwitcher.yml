@@ -533,6 +533,18 @@ jobs:
             failed_downloads+=("load_semantic_model.py")
           fi
 
+          if ! download_script "https://raw.githubusercontent.com/adoptium/aqa-test-tools/refs/heads/master/BugPredict/GlitchWitcher/REPD_Impl.py" "REPD_Impl.py"; then
+            failed_downloads+=("REPD_Impl.py")
+          fi
+
+          if ! download_script "https://raw.githubusercontent.com/adoptium/aqa-test-tools/refs/heads/master/BugPredict/GlitchWitcher/autoencoder.py" "autoencoder.py"; then
+            failed_downloads+=("autoencoder.py")
+          fi
+
+          if ! download_script "https://raw.githubusercontent.com/adoptium/aqa-test-tools/refs/heads/master/BugPredict/GlitchWitcher/stat_util.py" "stat_util.py"; then
+            failed_downloads+=("stat_util.py")
+          fi
+
           # Check for failed downloads
           if [ ${#failed_downloads[@]} -gt 0 ]; then
             echo "❌ Failed to download the following scripts:"
