@@ -1,0 +1,91 @@
+name: Semantic Bug Prediction
+
+on:
+  pull_request_target:
+    branches:
+      - main
+
+permissions:
+  pull-requests: write
+  issues: write
+
+jobs:
+  predict:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v3
+      with:
+        fetch-depth: 0
+
+    - name: Set up Python
+      uses: actions/setup-python@v3
+      with:
+        python-version: '3.10'
+
+    - name: Install dependencies
+      run: |
+        pip install tensorflow==2.12.0 pandas joblib scikit-learn
+
+    - name: Get changed files
+      id: changed-files
+      run: |
+        files=$(git diff --name-only --diff-filter=ACMRT ${{ github.event.pull_request.base.sha }}..${{ github.event.pull_request.head.sha }} | grep -E "\.(java|py)$" | xargs)
+        echo "all_changed_files=$files" >> $GITHUB_OUTPUT
+        if [ -n "$files" ]; then
+          echo "any_changed=true" >> $GITHUB_OUTPUT
+        else
+          echo "any_changed=false" >> $GITHUB_OUTPUT
+        fi
+
+    - name: Extract semantic features BEFORE changes (base)
+      if: steps.changed-files.outputs.any_changed == 'true'
+      run: |
+        git checkout ${{ github.event.pull_request.base.sha }}
+        mkdir -p semantic_metrics_base
+        for file in ${{ steps.changed-files.outputs.all_changed_files }}; do
+          echo "Extracting semantic features for $file (base)..."
+          python encode_semantic_features.py "$file" --output semantic_metrics_base/"$(basename $file)_features.npy"
+        done
+
+    - name: Extract semantic features AFTER changes (head)
+      if: steps.changed-files.outputs.any_changed == 'true'
+      run: |
+        git checkout ${{ github.event.pull_request.head.sha }}
+        mkdir -p semantic_metrics_head
+        for file in ${{ steps.changed-files.outputs.all_changed_files }}; do
+          echo "Extracting semantic features for $file (head)..."
+          python encode_semantic_features.py "$file" --output semantic_metrics_head/"$(basename $file)_features.npy"
+        done
+
+    - name: Run semantic prediction and compare
+      if: steps.changed-files.outputs.any_changed == 'true'
+      id: prediction
+      run: |
+        echo "Running semantic predictions..."
+        python REPD_Impl.py semantic_metrics_base semantic_metrics_head trained_models > semantic_comparison.txt
+        {
+          echo "comment<<EOF"
+          cat semantic_comparison.txt
+          echo ""
+          echo "### 📋 Interpretation Note:"
+          echo "> The values shown are Probability Densities (PDFs), not probabilities. They represent the model's assessment of how likely a file's characteristics are to be 'defective' vs. 'non-defective'. A higher value indicates a better fit for that category. Very small values are expected and normal."
+          echo ""
+          echo "EOF"
+        } >> $GITHUB_OUTPUT
+
+    - name: Comment on PR
+      if: steps.changed-files.outputs.any_changed == 'true'
+      uses: actions/github-script@v6
+      env:
+        COMMENT_BODY: "${{ steps.prediction.outputs.comment }}"
+      with:
+        github-token: ${{ secrets.GITHUB_TOKEN }}
+        script: |
+          github.rest.issues.createComment({
+            issue_number: context.payload.pull_request.number,
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            body: process.env.COMMENT_BODY
+          })
